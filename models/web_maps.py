@@ -24,3 +24,13 @@ class ShopifyStockMapping(models.Model):
     web_stock_id = fields.Char(string="ID de stock en la web", required=True)
     odoo_quant_id = fields.Many2one('stock.quant', string="Quant en Odoo", required=True)
     shopify_instance_id = fields.Many2one('shopify.instance', string='Shopify Instance')
+    
+class ShopifyPartnerMap(models.Model):
+    _name = 'shopify.partner.map'
+    _description = 'Shopify Partner Map'
+    _rec_name = 'shopify_partner_id'
+
+    partner_id = fields.Many2one('res.partner', string='Partner', required=True, ondelete='cascade')
+    shopify_partner_id = fields.Char(string='Shopify Partner ID', required=True)
+    shopify_instance_id = fields.Many2one('shopify.instance', string='Shopify Instance', required=True)
+

@@ -20,6 +20,12 @@ class ResPartner(models.Model):
     shopify_order_count = fields.Integer('Shopify Order Count')
     shopify_note = fields.Text('Shopify Note')
     is_exported = fields.Boolean(string="Exported")
+    
+    shopify_partner_map_ids = fields.One2many(
+        'shopify.partner.map',
+        'partner_id',
+        string='Shopify Mappings'
+    )
 
     def import_shopify_customers(self, shopify_instance_ids, skip_existing_customer):
         """
