@@ -15,26 +15,34 @@ _logger = logging.getLogger(__name__)
 class ProductTemplateAttributeValue(models.Model):
     _inherit = 'product.template.attribute.value'
 
-    shopify_product_id = fields.Char(string="Shopify Product ID")
+    product_map_ids = fields.One2many(
+        "shopify.product.map",
+        "odoo_id",
+        string="Shopify Product Mappings",
+        help="Mappings to Shopify products across multiple websites"
+    )
 
 # inherit class product.product and add fields for shopify instance and shopify variant id
 
 class ProductProduct(models.Model):
     _inherit = 'product.product'
 
-    shopify_variant_id = fields.Char('Shopify Variant Id')
     is_shopify_variant = fields.Boolean('Is Shopify Variant', default=False)
     shopify_barcode = fields.Char('Shopify Barcode')
     shopify_sku = fields.Char('Shopify SKU')
-    shopify_price = fields.Float(string="Price")
-    shopify_inventory_item_id = fields.Char(string="Shopify Inventory Item ID")
 
-    def _compute_product_price_extra(self):
-        for product in self:
-            if product.is_shopify_product:
-                product.price_extra = product.shopify_price
-            else:
-                product.price_extra = sum(product.product_template_attribute_value_ids.mapped('price_extra'))
+    variant_map_ids = fields.One2many(
+        "shopify.variant.map",
+        "odoo_id",
+        string="Shopify Variant Mappings",
+        help="Mappings to Shopify variants across multiple websites"
+    )
+    stock_map_ids = fields.One2many(
+        "shopify.stock.map",
+        "odoo_id",
+        string="Shopify Stock Mappings",
+        help="Mappings to Shopify stock across multiple websites"
+    )
 
 
 class ProductTemplate(models.Model):
@@ -43,7 +51,7 @@ class ProductTemplate(models.Model):
     shopify_instance_id = fields.Many2one('shopify.instance', string='Shopify Instance')
     shopify_product_id = fields.Char('Shopify Product Id')
     shopify_product_status = fields.Char('Shopify Product Status')
-    is_shopify_product = fields.Boolean('Is Shopify Product', default=False)
+    
     shopify_barcode = fields.Char('Shopify Barcode')
     shopify_sku = fields.Char('Shopify SKU')
     shopify_image_ids = fields.One2many("shopify.product.image", "shopify_template_id")
@@ -104,7 +112,7 @@ class ProductTemplate(models.Model):
                 products = self._process_imported_products(all_products, shopify_instance_id, skip_existing_products)
                 return products
             else:
-                _logger.info("WSSHProducts not found in Shopify store")
+                _logger.info("WSSH No products found in Shopify store for instance %s", shopify_instance_id.name)
                 return []
 
     def _process_imported_products(self, shopify_products, shopify_instance_id, skip_existing_products):
@@ -113,14 +121,15 @@ class ProductTemplate(models.Model):
           _logger.info("WSSH Processing Shopify product ID: %s", shopify_product.get('id'))
           shopify_product_id = shopify_product.get('id')
           
-          # Buscar si el producto ya existe en Odoo por shopify_product_id en product.template.attribute.value
+          # Buscar si el producto ya existe en Odoo por shopify_product_id en product.template.attribute.value          
           existing_attribute_value = self.env['product.template.attribute.value'].sudo().search([
-              ('shopify_product_id', '=', shopify_product_id),
+              ('product_map_ids.web_product_id', '=', shopify_product_id),
+              ('product_map_ids.shopify_instance_id', '=', shopify_instance_id.id),
           ], limit=1)
-          
+        
           if existing_attribute_value:
               # Si el producto ya existe, no hacer nada
-              _logger.info(f"WSSH Product with Shopify ID {shopify_product_id} already exists in Odoo.")
+              _logger.info(f"WSSH Product with Shopify ID {shopify_product_id} already exists in Odoo for instance {shopify_instance_id.name}.")
               product_list.append(existing_attribute_value.product_tmpl_id.id)
               continue
           
@@ -132,8 +141,8 @@ class ProductTemplate(models.Model):
               # Buscar por shopify_variant_id o default_code (SKU)
               existing_variant = self.env['product.product'].sudo().search([
                   '|',
-                  ('shopify_variant_id', '=', shopify_variant_id),
-                  ('default_code', '=', sku),  # OR para default_code
+                  ('variant_map_ids.web_variant_id', '=', shopify_variant_id),
+                  ('default_code', '=', sku),
               ], limit=1)
               
               if existing_variant:
@@ -142,18 +151,18 @@ class ProductTemplate(models.Model):
                       lambda v: v.attribute_id.name.lower() == 'color'
                   )
                   if color_values:
-                      color_values.write({'shopify_product_id': shopify_product_id})
+                      color_map = color_values.product_map_ids.filtered(
+                          lambda m: m.shopify_instance_id == shopify_instance_id)
+                      if not color_map:
+                          self.env['shopify.product.map'].create({
+                              'web_product_id': shopify_product_id,
+                              'odoo_id': color_values[0].id,
+                              'shopify_instance_id': shopify_instance_id.id,
+                          })
+                      elif color_map.web_product_id != shopify_product_id:
+                          color_map.write({'web_product_id': shopify_product_id})
                       for template_value in color_values:
-                          _logger.info(f"WSSH Updated color attribute value {template_value.name} with Shopify ID {shopify_product_id}.")                              
-                  
-                  self._update_variant_ids([existing_variant], [variant])                  
-                  
-                  # Marcar el producto como exportado
-                  existing_variant.product_tmpl_id.write({
-                      'is_shopify_product': True,
-                      'shopify_instance_id': shopify_instance_id.id,
-                      'is_exported': True,
-                  })
+                          _logger.info(f"WSSH Updated color attribute value {template_value.name} with Shopify ID {shopify_product_id} for instance {shopify_instance_id.name}.")                           
                   
                   _logger.info(f"WSSH Updated existing product template {existing_variant.product_tmpl_id.name} with Shopify ID {shopify_product_id}.")
                   product_list.append(existing_variant.product_tmpl_id.id)
@@ -397,11 +406,10 @@ class ProductTemplate(models.Model):
             else:
                 _logger.info("WSSH Starting product export SIN fecha for instance %s", instance_id.name)
                 domain = [
-                        ('is_published', '=', True),
-                        ('is_shopify_product', '=', False)
+                        ('is_published', '=', True)
                 ]
 
-            products_to_export = self.search(domain, order='is_shopify_product,create_date')
+            products_to_export = self.search(domain, order='create_date')
 
             product_count = len(products_to_export)
             _logger.info("WSSH Found %d products to export for instance %s", product_count, instance_id.name)
@@ -483,11 +491,12 @@ class ProductTemplate(models.Model):
                         }
                     }
 
-                    # Si el producto ya existe, solo actualizamos el producto y sus opciones
-                    if template_attribute_value.shopify_product_id:  # Acceso correcto al campo
+                    product_map = template_attribute_value.product_map_ids.filtered(
+                        lambda m: m.shopify_instance_id == instance_id)
+                    if product_map:
                         if update:
-                            product_data["product"]["id"] = template_attribute_value.shopify_product_id
-                            url = self.get_products_url(instance_id, f'products/{template_attribute_value.shopify_product_id}.json')
+                            product_data["product"]["id"] = product_map.web_product_id
+                            url = self.get_products_url(instance_id, f'products/{product_map.web_product_id}.json')
                             response = requests.put(url, headers=headers, data=json.dumps(product_data))
                             _logger.info(f"WSSH Updating Shopify product {template_attribute_value.shopify_product_id}")
 
@@ -511,13 +520,13 @@ class ProductTemplate(models.Model):
                             shopify_product = response.json().get('product', {})
                             if shopify_product:
                                 # Guardar el ID del producto y actualizar los IDs de las variantes
-                                template_attribute_value.shopify_product_id = shopify_product.get('id')  # Asignación correcta del campo
+                                self.env['shopify.product.map'].create({
+                                    'web_product_id': shopify_product.get('id'),
+                                    'odoo_id': template_attribute_value.id,
+                                    'shopify_instance_id': instance_id.id,
+                                })
                                 shopify_variants = shopify_product.get('variants', [])
-                                self._update_variant_ids(variants, shopify_variants)
-
-                                product.is_shopify_product = True
-                                product.shopify_instance_id = instance_id.id
-                                product.is_exported = True
+                                self._update_variant_ids(variants, shopify_variants,instance_id)
 
                     if response is not None and not response.ok:
                         _logger.error(f"WSSH Error exporting product: {response.text}")
@@ -542,7 +551,7 @@ class ProductTemplate(models.Model):
             _logger.error(f"WSSH Error updating variant {variant.default_code}: {response.text}")
             raise UserError(f"WSSH Error updating variant {variant.default_code}: {response.text}")            
          
-   def _export_single_product(self, product, instance_id, headers, update):
+    def _export_single_product(self, product, instance_id, headers, update):
         """Exporta un producto sin separación por colores"""
         variant_data = [
             self._prepare_shopify_variant_data(variant, instance_id, is_update=update)
@@ -595,7 +604,7 @@ class ProductTemplate(models.Model):
                 # Actualizar ID del producto y de sus variantes
                 product.shopify_product_id = shopify_product.get('id')
                 shopify_variants = shopify_product.get('variants', [])
-                self._update_variant_ids(product.product_variant_ids, shopify_variants)
+                self._update_variant_ids(product.product_variant_ids, shopify_variants,instance_id)
 
                 product.is_shopify_product = True
                 product.shopify_instance_id = instance_id.id
@@ -605,28 +614,33 @@ class ProductTemplate(models.Model):
             _logger.error(f"WSSH Error exporting product: {response.text}")
             raise UserError(f"WSSH Error exporting product {product.name}: {response.text}")
             
-    def _update_variant_ids(self, odoo_variants, shopify_variants):
+    def _update_variant_ids(self, odoo_variants, shopify_variants,instance_id):
         """
         Actualiza los IDs de las variantes de Shopify en las variantes de Odoo.
         """
-        # Crear un diccionario de variantes de Shopify por SKU
-        shopify_variants_by_sku = {
-            variant['sku']: {
-                'id': variant['id'],
-                'inventory_item_id': variant.get('inventory_item_id')
-            }
-            for variant in shopify_variants 
-            if variant.get('sku')
-        }
-
-        # Actualizar cada variante de Odoo
-        for variant in odoo_variants:
-            if variant.default_code in shopify_variants_by_sku:
-                variant.shopify_variant_id = shopify_variants_by_sku[variant.default_code]['id']
-                variant.shopify_inventory_item_id = shopify_variants_by_sku[variant.default_code]['inventory_item_id']
-                variant.is_shopify_variant=True
-                variant.shopify_barcode=variant.default_code
-                _logger.info(f"WSSH Updated variant {variant.default_code} with Shopify ID {variant.shopify_variant_id} and inventory item ID {variant.shopify_inventory_item_id}")
+        for odoo_variant in odoo_variants:
+            variant_map = odoo_variant.variant_map_ids.filtered(
+                lambda m: m.shopify_instance_id == instance_id)
+            if variant_map and variant_map.web_variant_id != shopify_variants[0].get('id'):
+                variant_map.write({'web_variant_id': shopify_variants[0].get('id')})
+                stock_map = odoo_variant.stock_map_ids.filtered(
+                    lambda m: m.shopify_instance_id == instance_id)
+                if stock_map and stock_map.web_stock_id != shopify_variants[0].get('inventory_item_id'):
+                    stock_map.write({'web_stock_id': shopify_variants[0].get('inventory_item_id')})
+            elif not variant_map:
+                for shopify_variant in shopify_variants:
+                    if odoo_variant.default_code == shopify_variant.get('sku') or odoo_variant.barcode == shopify_variant.get('barcode'):
+                        self.env['shopify.variant.map'].create({
+                            'web_variant_id': shopify_variant['id'],
+                            'odoo_id': odoo_variant.id,
+                            'shopify_instance_id': instance_id.id,
+                        })
+                        self.env['shopify.stock.map'].create({
+                            'web_stock_id': shopify_variant.get('inventory_item_id'),
+                            'odoo_id': odoo_variant.id,
+                            'shopify_instance_id': instance_id.id,
+                        })
+                        break                    
                 
     def _prepare_shopify_variant_data(self, variant, instance_id, template_attribute_value=None, is_color_split=False, is_update=False):
         """Prepara los datos de la variante para enviar a Shopify"""
