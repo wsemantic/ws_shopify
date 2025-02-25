@@ -1,0 +1,52 @@
+<odoo>
+    <data>
+        <!--Shopify Payout form view -->
+        <record model="ir.ui.view" id="shopify_payout_form_view">
+            <field name="name">shopify.payout.form</field>
+            <field name="model">shopify.payout</field>
+            <field name="arch" type="xml">
+                <form string="Payouts">
+                    <sheet>
+                        <group>
+                            <field name="shopify_id"/>
+                        </group>
+                        <notebook>
+                            <page string="Payout Details">
+                                <group>
+                                    <group>
+                                        <field name="shopify_instance_id"/>
+                                        <field name="is_shopify"/>
+                                    </group>
+                                    <group>
+                                        <field name="status"/>
+                                        <field name="amount"/>
+                                    </group>
+                                </group>
+                            </page>
+                        </notebook>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Payout tree view based on defined form view -->
+        <record model="ir.ui.view" id="shopify_payout_tree_view">
+            <field name="name">shopify.payout.tree</field>
+            <field name="model">shopify.payout</field>
+            <field name="arch" type="xml">
+                <tree string="Payouts">
+                    <field name="shopify_id"/>
+                </tree>
+            </field>
+        </record>
+
+        <!-- create action for shopify payout -->
+        <record model="ir.actions.act_window" id="shopify_payouts_action">
+            <field name="name">Payouts</field>
+            <field name="res_model">shopify.payout</field>
+            <field name="view_id" ref="shopify_payout_tree_view"/>
+            <field name="view_mode">tree,form</field>
+        </record>
+
+    </data>
+</odoo>

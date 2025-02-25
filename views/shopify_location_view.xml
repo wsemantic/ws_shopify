@@ -1,0 +1,52 @@
+<odoo>
+    <data>
+        <!--Shopify Location form view -->
+        <record model="ir.ui.view" id="shopify_location_form_view">
+            <field name="name">shopify.location.form</field>
+            <field name="model">shopify.location</field>
+            <field name="arch" type="xml">
+                <form string="Shopify Location">
+                    <sheet>
+                        <group>
+                            <field name="name"/>
+                        </group>
+                        <notebook>
+                            <page string="Location Details">
+                                <group>
+                                    <group>
+                                        <field name="shopify_location_id"/>
+                                        <field name="legacy" invisible="1"/>
+                                    </group>
+                                    <group>
+                                        <field name="shopify_instance_id"/>
+                                        <field name="active" invisible="1"/>
+                                    </group>
+                                </group>
+                            </page>
+                        </notebook>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- locations tree view based on defined form view -->
+        <record model="ir.ui.view" id="shopify_location_tree_view">
+            <field name="name">shopify.location.tree</field>
+            <field name="model">shopify.location</field>
+            <field name="arch" type="xml">
+                <tree string="Shopify Location">
+                    <field name="name"/>
+                </tree>
+            </field>
+        </record>
+
+        <!-- create action for shopify location -->
+        <record model="ir.actions.act_window" id="shopify_location_action">
+            <field name="name">Shopify Location</field>
+            <field name="res_model">shopify.location</field>
+            <field name="view_id" ref="shopify_location_tree_view"/>
+            <field name="view_mode">tree,form</field>
+        </record>
+
+    </data>
+</odoo>

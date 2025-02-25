@@ -1,0 +1,53 @@
+<odoo>
+    <data>
+        <!--Shopify Image form view -->
+        <record model="ir.ui.view" id="shopify_image_form_view">
+            <field name="name">shopify.product.image.form</field>
+            <field name="model">shopify.product.image</field>
+            <field name="arch" type="xml">
+                <form string="Shopify Images">
+                    <sheet>
+                        <group>
+                            <field name="shopify_image_id"/>
+                        </group>
+                        <notebook>
+                            <page string="Shopify Instance Details">
+                                <group>
+                                    <group>
+                                        <field name="shopify_template_id"/>
+                                        <field name="url"/>
+                                    </group>
+                                    <group>
+                                        <field name="shopify_variant_id"/>
+                                        <field name="shopify_image" widget="image"/>
+                                    </group>
+                                </group>
+                            </page>
+                        </notebook>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- shopify_image tree view -->
+        <record model="ir.ui.view" id="shopify_image_tree_view">
+            <field name="name">shopify.product.image.tree</field>
+            <field name="model">shopify.product.image</field>
+            <field name="arch" type="xml">
+                <tree string="Shopify Images">
+                    <field name="shopify_image_id"/>
+                </tree>
+            </field>
+        </record>
+
+        <!-- create action for shopify image -->
+        <record model="ir.actions.act_window" id="shopify_image_action">
+            <field name="name">Shopify Images</field>
+            <field name="res_model">shopify.product.image</field>
+            <field name="view_id" ref="shopify_image_tree_view"/>
+            <field name="view_mode">tree,form</field>
+        </record>
+
+
+    </data>
+</odoo>

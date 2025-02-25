@@ -1,0 +1,75 @@
+<odoo>
+    <data>
+        <!--Shopify Instance form view -->
+        <record model="ir.ui.view" id="shopify_instance_form_view">
+            <field name="name">shopify.instance.form</field>
+            <field name="model">shopify.instance</field>
+            <field name="arch" type="xml">
+                <form string="Shopify Instance">
+                    <header>
+                        <button name="shopify_authenticate" string="Authenticate" type="object" class="oe_highlight"/>
+                    </header>
+                    <sheet>
+                        <group>
+                            <field name="name"/>
+                        </group>
+                        <notebook>
+                            <page string="Shopify Instance Details" name="shopify_instance_details">
+                                <group>
+                                    <group>
+                                        <field name="shopify_api_key"/>
+                                        <field name="shopify_password"/>
+                                        <field name="shopify_shared_secret"/>
+                                    </group>
+                                    <group>
+                                        <field name="shopify_version"/>
+                                        <field name="shopify_host"/>
+                                        <field name="shopify_active"/>
+                                    </group>
+                                </group>
+                            </page>
+                            <page string="Import Details" name="import_details">
+                                <group>
+                                    <group>
+                                        <field name="shopify_last_date_product_import"/>
+                                        <field name="shopify_last_date_customer_import"/>
+                                    </group>
+                                    <group>
+                                        <field name="shopify_last_date_draftorder_import" invisible="1"/>
+                                        <field name="shopify_last_date_order_import"/>
+                                    </group>
+                                </group>
+                            </page>
+                        </notebook>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- instance tree view based on defined form view -->
+        <record model="ir.ui.view" id="shopify_instance_tree_view">
+            <field name="name">shopify.instance.tree</field>
+            <field name="model">shopify.instance</field>
+            <field name="arch" type="xml">
+                <tree string="Shopify Instance">
+                    <field name="name"/>
+                    <!--              <field name="shopify_api_key"/>-->
+                    <!--              <field name="shopify_password"/>-->
+                    <!--              <field name="shopify_shared_secret"/>-->
+                    <!--              <field name="shopify_host"/>-->
+                    <!--              <field name="shopify_active"/>-->
+                </tree>
+            </field>
+        </record>
+
+        <!-- create action for shopify instance -->
+        <record model="ir.actions.act_window" id="shopify_action_instance">
+            <field name="name">Shopify Instance</field>
+            <field name="res_model">shopify.instance</field>
+            <field name="view_id" ref="shopify_instance_tree_view"/>
+            <field name="view_mode">tree,form</field>
+        </record>
+
+
+    </data>
+</odoo>

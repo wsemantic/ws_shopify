@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!--Auto cron job for import customers from Shopify to Odoo.-->
+        <record id="cron_import_customers_from_shopify" model="ir.cron">
+            <field name="name">Shopify: Auto Import Customers</field>
+            <field name="interval_number">5</field>
+            <field name="interval_type">minutes</field>
+            <field name="numbercall">-1</field>
+            <field name="doall" eval="False"/>
+            <field name="model_id" ref="model_res_partner"/>
+            <field name="code">model.import_shopify_customers(False,True)</field>
+            <field name="state">code</field>
+            <field name="active" eval="False"/>
+        </record>
+
+         <!--Auto cron job for export customers from Shopify to Odoo.-->
+        <record id="cron_export_customers_from_shopify" model="ir.cron">
+            <field name="name">Shopify: Auto Export Customers</field>
+            <field name="interval_number">5</field>
+            <field name="interval_type">minutes</field>
+            <field name="numbercall">-1</field>
+            <field name="doall" eval="False"/>
+            <field name="model_id" ref="model_res_partner"/>
+            <field name="code">model.export_customers_to_shopify(False,False)</field>
+            <field name="state">code</field>
+            <field name="active" eval="False"/>
+        </record>
+
+        <!--Auto cron job for import products from Shopify to Odoo.-->
+        <record id="cron_import_products_from_shopify" model="ir.cron">
+            <field name="name">Shopify: Auto Import Products</field>
+            <field name="interval_number">5</field>
+            <field name="interval_type">minutes</field>
+            <field name="numbercall">-1</field>
+            <field name="doall" eval="False"/>
+            <field name="model_id" ref="model_product_template"/>
+            <field name="code">model.import_shopify_products(False,True,False,False)</field>
+            <field name="state">code</field>
+            <field name="active" eval="False"/>
+        </record>
+
+        <!--Auto cron job for export products from Shopify to Odoo.-->
+        <record id="cron_export_products_from_shopify" model="ir.cron">
+            <field name="name">Shopify: Auto Export Products</field>
+            <field name="interval_number">5</field>
+            <field name="interval_type">minutes</field>
+            <field name="numbercall">-1</field>
+            <field name="doall" eval="False"/>
+            <field name="model_id" ref="model_product_template"/>
+            <field name="code">model.export_products_to_shopify(False,False)</field>
+            <field name="state">code</field>
+            <field name="active" eval="False"/>
+        </record>
+
+        <!--Auto cron job for import locations from Shopify to Odoo.-->
+        <record id="cron_import_locations_from_shopify" model="ir.cron">
+            <field name="name">Shopify: Auto Import Locations</field>
+            <field name="interval_number">5</field>
+            <field name="interval_type">minutes</field>
+            <field name="numbercall">-1</field>
+            <field name="doall" eval="False"/>
+            <field name="model_id" ref="model_shopify_location"/>
+            <field name="code">model.import_shopify_locations(False)</field>
+            <field name="state">code</field>
+            <field name="active" eval="False"/>
+        </record>
+
+        <!--Auto cron job for update from Shopify to Odoo.-->
+        <record id="cron_update_stock_from_shopify" model="ir.cron">
+            <field name="name">Shopify: Auto Update Stock</field>
+            <field name="interval_number">5</field>
+            <field name="interval_type">minutes</field>
+            <field name="numbercall">-1</field>
+            <field name="doall" eval="False"/>
+            <field name="model_id" ref="model_product_template"/>
+            <field name="code">model.update_stock(False)</field>
+            <field name="state">code</field>
+            <field name="active" eval="False"/>
+        </record>
+
+        <!--Auto cron job for import orders from Shopify to Odoo.-->
+        <record id="cron_import_orders_from_shopify" model="ir.cron">
+            <field name="name">Shopify: Auto Import Orders</field>
+            <field name="interval_number">5</field>
+            <field name="interval_type">minutes</field>
+            <field name="numbercall">-1</field>
+            <field name="doall" eval="False"/>
+            <field name="model_id" ref="model_sale_order"/>
+            <field name="code">model.import_shopify_orders(False,True,False,False)</field>
+            <field name="state">code</field>
+            <field name="active" eval="False"/>
+        </record>
+
+         <!--Auto cron job for export orders from Shopify to Odoo.-->
+        <record id="cron_export_orders_from_shopify" model="ir.cron">
+            <field name="name">Shopify: Auto Export Orders</field>
+            <field name="interval_number">5</field>
+            <field name="interval_type">minutes</field>
+            <field name="numbercall">-1</field>
+            <field name="doall" eval="False"/>
+            <field name="model_id" ref="model_sale_order"/>
+            <field name="code">model.export_orders_to_shopify(False,False)</field>
+            <field name="state">code</field>
+            <field name="active" eval="False"/>
+        </record>
+
+    </data>
+</odoo>

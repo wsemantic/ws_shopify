@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Shopify -->
+    <menuitem id="shopify_menu_root"
+              name="Shopify"
+              active="True"
+              sequence="6"
+              web_icon="pragtech_odoo_shopify_connector,static/description/icon.png"/>
+
+    <menuitem id="shopify_sales_menu"
+              name="Sales"
+              parent="shopify_menu_root"
+              sequence="1"/>
+
+    <menuitem id="shopify_sales_quotation_menu"
+              name="Quotations"
+              parent="shopify_sales_menu"
+              action="action_order_quotation_shopify"
+              sequence="1"/>
+
+    <menuitem id="shopify_sales_order_menu"
+              name="Orders"
+              parent="shopify_sales_menu"
+              action="action_sale_order_shopify"
+              sequence="2"/>
+
+    <menuitem id="shopify_invoices_menu"
+              name="Invoices"
+              parent="shopify_sales_menu"
+              sequence="3"/>
+
+    <menuitem id="shopify_delivery_order_menu"
+              name="Delivery Orders"
+              parent="shopify_sales_menu"
+              sequence="4"/>
+
+    <menuitem id="shopify_refunds_menu"
+              name="Refunds"
+              parent="shopify_sales_menu"
+              sequence="5"/>
+
+    <menuitem id="shopify_customers_menu"
+              name="Customers"
+              parent="shopify_sales_menu"
+              action="action_shopify_customer"
+              sequence="6"/>
+
+    <menuitem id="shopify_products_menu"
+              name="Products"
+              parent="shopify_menu_root"
+              sequence="2"/>
+
+    <menuitem id="shopify_products_sub_menu"
+              name="Products"
+              parent="shopify_products_menu"
+              action="action_product_template_shopify"
+              sequence="1"/>
+
+    <menuitem id="shopify_product_variant_menu"
+              name="Product Variants"
+              parent="shopify_products_menu"
+              action="action_product_product_shopify"
+              sequence="2"/>
+
+    <menuitem id="shopify_config_menu"
+              name="Configuration"
+              parent="shopify_menu_root"
+              sequence="100"/>
+
+    <menuitem id="menu_instance"
+              name="Instance"
+              parent="shopify_config_menu"
+              action="shopify_action_instance"
+              sequence="1"/>
+
+    <menuitem id="menu_shopify_locations"
+              name="Shopify Locations"
+              parent="shopify_config_menu"
+              action="shopify_location_action"
+              sequence="2"/>
+
+<!--    <menuitem id="menu_shopify_product_images"-->
+<!--              name="Product Images"-->
+<!--              parent="shopify_config_menu"-->
+<!--              action="shopify_image_action"-->
+<!--              sequence="3"/>-->
+
+<!--    <menuitem id="menu_shopify_gift_cards"-->
+<!--              name="Gift Cards"-->
+<!--              parent="shopify_config_menu"-->
+<!--              action="shopify_gift_card_action"-->
+<!--              sequence="4"/>-->
+
+<!--    <menuitem id="menu_payouts"-->
+<!--              name="Payouts"-->
+<!--              parent="shopify_config_menu"-->
+<!--              action="shopify_payouts_action"-->
+<!--              sequence="5"/>-->
+
+    <menuitem id="menu_shopify_operation"
+              name="Shopify Operations"
+              parent="shopify_menu_root"
+              action="action_shopify_operation"
+              sequence="99"/>
+
+</odoo>

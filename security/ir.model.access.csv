@@ -1,0 +1,10 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_shopify_instance_user,shopify_instance,model_shopify_instance,base.group_user,1,1,1,1
+access_shopify_operation_user,shopify_operation,model_shopify_operation,base.group_user,1,1,1,1
+access_shopify_product_image_user,shopify_product_image,model_shopify_product_image,base.group_user,1,1,1,1
+access_shopify_location_user,shopify_location,model_shopify_location,base.group_user,1,1,1,1
+access_customer_export_user,customer_export_instance,model_customer_export_instance,base.group_user,1,1,1,1
+access_products_export_user,product_export_instance,model_product_export_instance,base.group_user,1,1,1,1
+access_orders_export_user,order_export_instance,model_order_export_instance,base.group_user,1,1,1,1
+access_gift_cards_user,gift_card,model_gift_card,base.group_user,1,1,1,1
+access_shopify_payout_user,shopify_payout,model_shopify_payout,base.group_user,1,1,1,1

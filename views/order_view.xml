@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record model="ir.ui.view" id="sale_order_shopify_form">
+        <field name="name">sale.order.form.view.inherit</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+
+            <xpath expr="//page[@name='customer_signature']" position="after">
+                <page string="Shopify">
+                    <group>
+                        <group>
+                            <field name="shopify_order_id" invisible="0"/>
+                            <field name="shopify_order_number" invisible="1"/>
+                            <field name="shopify_instance_id"/>
+                            <field name="is_shopify_order" invisible="0"/>
+                        </group>
+                        <group>
+                            <field name="shopify_order_status"/>
+                            <field name="order_shopify_id"/>
+                            <field name="is_exported"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+
+        </field>
+    </record>
+
+    <record id="view_quotation_tree_inherit_shopify" model="ir.ui.view">
+        <field name="name">quotation.tree.inherit.sale</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_quotation_tree_with_onboarding"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='activity_ids']" position="after">
+                <field name="shopify_order_id" readonly="1"/>
+                <field name="shopify_instance_id" readonly="1"/>
+                <field name="is_shopify_order" readonly="1"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_order_tree_inherit_shopify" model="ir.ui.view">
+        <field name="name">sale.order.tree.inherit.sale</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_tree"/>
+        <field name="arch" type="xml">
+
+            <xpath expr="//field[@name='activity_ids']" position="after">
+                <field name="shopify_order_id" readonly="1"/>
+                <field name="shopify_instance_id" readonly="1"/>
+                <field name="is_shopify_order" readonly="1"/>
+            </xpath>
+
+        </field>
+    </record>
+
+     <record id="view_sale_order_search_inherit_shopify" model="ir.ui.view">
+        <field name="name">view.sale.order.search.inherit</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_sales_order_filter"/>
+        <field name="arch" type="xml">
+            <xpath expr="//filter[@name='my_sale_orders_filter']" position="after">
+                <filter string="Shopify Orders" name="shopify_orders" domain="[('is_shopify_order', '=', True)]"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="action_order_quotation_shopify" model="ir.actions.act_window">
+        <field name="name">Quotations</field>
+        <field name="type">ir.actions.act_window</field>
+        <field name="res_model">sale.order</field>
+        <field name="view_id" ref="sale.view_quotation_tree_with_onboarding"/>
+        <field name="context">{'search_default_shopify_orders': 1}</field>
+        <field name="domain">[('state', '=', 'draft')]</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+    <record id="action_sale_order_shopify" model="ir.actions.act_window">
+        <field name="name">Sale Orders</field>
+        <field name="type">ir.actions.act_window</field>
+        <field name="res_model">sale.order</field>
+        <field name="view_id" ref="sale.view_order_tree"/>
+        <field name="context">{'search_default_shopify_orders': 1}</field>
+        <field name="domain">[('state', '!=', 'draft')]</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+
+</odoo>
+

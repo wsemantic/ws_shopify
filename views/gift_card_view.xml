@@ -1,0 +1,53 @@
+<odoo>
+    <data>
+        <!--Shopify Gift Card form view -->
+        <record model="ir.ui.view" id="shopify_gift_card_form_view">
+            <field name="name">gift.card.form</field>
+            <field name="model">gift.card</field>
+            <field name="arch" type="xml">
+                <form string="Gift Cards">
+                    <sheet>
+                        <group>
+                            <field name="shopify_gift_card_id"/>
+                        </group>
+                        <notebook>
+                            <page string="Gift Card Details">
+                                <group>
+                                    <group>
+                                        <field name="shopify_instance_id"/>
+                                        <field name="customer_id" invisible="0"/>
+                                        <field name="expiry_date"/>
+                                    </group>
+                                    <group>
+                                        <field name="is_shopify"/>
+                                        <field name="value" invisible="0"/>
+                                    </group>
+                                </group>
+                            </page>
+                        </notebook>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Gift Card tree view based on defined form view -->
+        <record model="ir.ui.view" id="shopify_gift_card_tree_view">
+            <field name="name">gift.card.tree</field>
+            <field name="model">gift.card</field>
+            <field name="arch" type="xml">
+                <tree string="Gift Cards">
+                    <field name="shopify_gift_card_id"/>
+                </tree>
+            </field>
+        </record>
+
+        <!-- create action for shopify gift cards -->
+        <record model="ir.actions.act_window" id="shopify_gift_card_action">
+            <field name="name">Gift Cards</field>
+            <field name="res_model">gift.card</field>
+            <field name="view_id" ref="shopify_gift_card_tree_view"/>
+            <field name="view_mode">tree,form</field>
+        </record>
+
+    </data>
+</odoo>

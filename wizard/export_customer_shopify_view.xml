@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_export_customers_shopify" model="ir.ui.view">
+        <field name="name">customer.export.instance.form.view</field>
+        <field name="model">customer.export.instance</field>
+        <field name="arch" type="xml">
+            <form string="Select Instance">
+                <sheet>
+                    <group>
+                         <group>
+                            <field name="shopify_instance_id" required="1"
+                                   options="{'no_create':True,'no_create_edit':True}"/>
+                        </group>
+                        <group>
+                            <field name="update_customer"/>
+                        </group>
+                    </group>
+
+                    <footer>
+                        <button name="customer_instance_for_exp" string="Export" type="object"
+                                class="oe_highlight"/>
+                        <button string="Cancel" class="oe_highlight" special="cancel"/>
+                    </footer>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_export_customers_shopify" model="ir.actions.act_window">
+        <field name="name">Export Customers to Shopify</field>
+        <field name="res_model">customer.export.instance</field>
+        <field name="binding_model_id" ref="model_res_partner"/>
+        <field name="binding_view_types">form,list</field>
+        <field name="target">new</field>
+        <field name="view_id" ref="pragtech_odoo_shopify_connector.view_export_customers_shopify"/>
+    </record>
+
+    <record id="action_open_export_customer_to_shopify" model="ir.actions.server">
+        <field name="name">Export Customers to Shopify</field>
+        <field name="model_id" ref="model_res_partner"/>
+        <field name="binding_model_id" ref="base.model_res_partner"/>
+        <field name="binding_view_types">form,list</field>
+        <field name="state">code</field>
+        <field name="code">
+            action = model.action_open_export_customer_to_shopify()
+        </field>
+    </record>
+
+
+</odoo>
+
