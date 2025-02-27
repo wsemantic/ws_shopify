@@ -83,7 +83,7 @@ class ResPartner(models.Model):
                                                                      shopify_instance_id.shopify_version, endpoint)
         return shop_url
 
-   def create_customers(self, shopify_customers, shopify_instance_id, skip_existing_customer):
+    def create_customers(self, shopify_customers, shopify_instance_id, skip_existing_customer):
         """
         Crea o actualiza clientes en Odoo a partir de una lista de clientes de Shopify.
         
@@ -188,7 +188,7 @@ class ResPartner(models.Model):
         
         return customer_list
 
-   def _get_customer_name(self, shopify_customer):
+    def _get_customer_name(self, shopify_customer):
         """
         Genera el nombre del cliente a partir de 'first_name' y 'last_name'.  
         Si no se dispone de ellos, se utiliza el email o un valor por defecto.
