@@ -23,11 +23,6 @@
             <xpath expr="//page[@name='internal_notes']" position="after">
                 <page name="shopify_details" string="Shopify">
                     <group>
-                        <!-- Se eliminó la referencia al campo shopify_instance_id -->
-                        <group>
-                            <field name="shopify_order_count"/>
-                            <field name="shopify_note"/>
-                        </group>
                         <group string="Mapeos de Shopify">
                             <field name="shopify_partner_map_ids">
                                 <tree editable="bottom">
