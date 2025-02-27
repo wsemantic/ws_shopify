@@ -30,14 +30,7 @@
                     </group>
                 </page>
             </xpath>
-            <!-- Se eliminan los campos heredados de la antigua integración -->
-            <xpath expr="//field[@name='shopify_product_id']" position="replace"/>
-            <xpath expr="//field[@name='is_shopify_product']" position="replace"/>
-            <xpath expr="//field[@name='shopify_instance_id']" position="replace"/>
-            <xpath expr="//field[@name='shopify_barcode']" position="replace"/>
-            <xpath expr="//field[@name='shopify_sku']" position="replace"/>
-            <xpath expr="//field[@name='is_exported']" position="replace"/>
-            <xpath expr="//field[@name='shopify_image_ids']" position="replace"/>
+
         </field>
     </record>
 
@@ -91,15 +84,7 @@
                     </group>
                 </page>
             </xpath>
-            <!-- Se eliminan los campos heredados de la antigua integración -->
-            <xpath expr="//field[@name='shopify_product_id']" position="replace"/>
-            <xpath expr="//field[@name='is_shopify_product']" position="replace"/>
-            <xpath expr="//field[@name='shopify_instance_id']" position="replace"/>
-            <xpath expr="//field[@name='shopify_variant_id']" position="replace"/>
-            <xpath expr="//field[@name='shopify_barcode']" position="replace"/>
-            <xpath expr="//field[@name='shopify_sku']" position="replace"/>
-            <xpath expr="//field[@name='is_exported']" position="replace"/>
-            <xpath expr="//field[@name='shopify_image_ids']" position="replace"/>
+
         </field>
     </record>
 
