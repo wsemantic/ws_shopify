@@ -23,10 +23,7 @@
             <xpath expr="//page[@name='internal_notes']" position="after">
                 <page name="shopify_details" string="Shopify">
                     <group>
-                        <group>
-                            <!-- Se mantienen los campos antiguos si se necesitan para compatibilidad o lógica -->
-                            <field name="shopify_instance_id"/>
-                        </group>
+                        <!-- Se eliminó la referencia al campo shopify_instance_id -->
                         <group>
                             <field name="shopify_order_count"/>
                             <field name="shopify_note"/>
