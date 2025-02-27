@@ -15,15 +15,7 @@ _logger = logging.getLogger(__name__)
 class SaleOrder(models.Model):
     _inherit = 'sale.order'
 
-    shopify_instance_id = fields.Many2one('shopify.instance', string='Shopify Instance')
-    shopify_order_id = fields.Char('Shopify Order Id')
-    shopify_order_number = fields.Char('Shopify Order Number')
-    shopify_order_status = fields.Char('Shopify Order Status')
-    shopify_order_date = fields.Datetime('Shopify Order Date')
-    shopify_order_total = fields.Float('Shopify Order Total')
-    is_shopify_order = fields.Boolean('Is Shopify Order', default=False)
-    is_exported = fields.Boolean(string="Is Exported")
-    order_shopify_id = fields.Char(string="Shopify-Order ID")
+
 
     def import_shopify_draft_orders(self, shopify_instance_ids, skip_existing_order, from_date, to_date):
         if shopify_instance_ids == False:
@@ -73,20 +65,18 @@ class SaleOrder(models.Model):
         order_list = []
         for order in orders:
             _logger.info(f"WSSH iterando orden {order.get('name')}")
-            if status == 'open':
-                shopify_order_id = self.env['sale.order'].sudo().search([('shopify_order_id', '=', order.get('id'))],limit=1)
-                if not shopify_order_id:
-                    _logger.info(f"WSSH no existe {order.get('name')}")
-                    shopify_order_id = self.prepare_shopify_order_vals(shopify_instance_id, order, skip_existing_order)
-                else:
-                    _logger.info(f"WSSH Encontrada orden {order.get('name')}")
+            shopify_order_map = self.env['shopify.order.map'].sudo().search(
+                [('shopify_order_id', '=', order.get('id'))], limit=1)
+            if not shopify_order_map:
+                _logger.info(f"WSSH no existe map para {order.get('name')}, creando la orden.")
+                sale_order_rec = self.prepare_shopify_order_vals(shopify_instance_id, order, skip_existing_order)
             else:
-                shopify_order_id = self.prepare_shopify_order_vals(shopify_instance_id, order, skip_existing_order)
-            if shopify_order_id:
-                order_list.append(shopify_order_id.id)
-                shopify_order_id.name = order.get('name')
-                if status == 'open':
-                    shopify_order_id.name = order.get('name')
+                _logger.info(f"WSSH encontrado map para {order.get('name')}, usando la orden existente.")
+                sale_order_rec = shopify_order_map.order_id
+            if sale_order_rec:
+                # Sincronizar el nombre desde Shopify, actualizándolo en Odoo
+                sale_order_rec.name = order.get('name')
+                order_list.append(sale_order_rec.id)
 
         return order_list   
 
@@ -104,35 +94,31 @@ class SaleOrder(models.Model):
                 dt_utc = dt.astimezone(timezone.utc)
                 date_order_value = fields.Datetime.to_string(dt_utc)
                 
-                res_partner.shopify_instance_id = shopify_instance_id.id
-                shopify_order_id = self.env['sale.order'].sudo().search(
-                    [('shopify_order_id', '=', order.get('id'))], limit=1)
-                shopify_order_vals = {
+                sale_order_vals = {
                     'partner_id': res_partner.id,
                     'name': order.get('name'),
-                    'shopify_instance_id': shopify_instance_id.id,
-                    'shopify_order_id': order.get('id'),
-                    'shopify_order_number': order.get('order_number'),
-                    'shopify_order_status': order.get('status'),
                     'create_date': date_order_value,
                     'date_order': date_order_value,
-                    'shopify_order_total': order.get('total_price'),
-                    'is_shopify_order': True,
-                    'order_shopify_id': order.get('order_id'),
-                }
-                if not shopify_order_id:
-                    shopify_order_id = self.sudo().create(shopify_order_vals)
-                    shopify_order_id.sudo().write({
-                        'date_order': date_order_value,
-                    })
-                    _logger.info("WSSH fecha pedido %s", date_order_value)
-                    shopify_order_id.state = 'draft'
-                else:
-                    if shopify_order_id and shopify_order_id.state == 'draft' and skip_existing_order == False:
-                        shopify_order_id.sudo().write(shopify_order_vals)
-                self.create_shopify_order_line(shopify_order_id, order, skip_existing_order, shopify_instance_id)
 
-                return shopify_order_id
+                }
+                                        
+                sale_order_rec = self.sudo().create(sale_order_vals)
+                sale_order_rec.sudo().write({
+                    'date_order': date_order_value,
+                })
+                _logger.info("WSSH fecha pedido %s", date_order_value)
+                sale_order_rec.state = 'draft'
+                # Se crea el registro en la clase mapa con los campos específicos de Shopify
+                map_vals = {
+                    'order_id': sale_order_rec.id,
+                    'shopify_order_id': order.get('id'),
+                    'shopify_instance_id': shopify_instance_id.id,
+                }
+                shopify_map = self.env['shopify.order.map'].sudo().create(map_vals)
+                sale_order_rec.shopify_order_map_id = shopify_map.id
+                self.create_shopify_order_line(sale_order_rec, order, skip_existing_order, shopify_instance_id)
+
+                return sale_order_rec
 
     def create_shopify_order_line(self, shopify_order_id, order, skip_existing_order, shopify_instance_id):
         amount = 0.00
@@ -346,7 +332,7 @@ class SaleOrder(models.Model):
         order_ids = self.sudo().browse(self._context.get("active_ids"))
         if not order_ids:
             if update == False:
-                order_ids = self.sudo().search([('is_shopify_order', '=', False), ('is_exported', '=', False)])
+                order_ids = self.sudo().search([('shopify_order_map_id', '=', False)])
             else:
                 order_ids = self.sudo().search([])
 
@@ -383,13 +369,13 @@ class SaleOrder(models.Model):
                         line_val_list.append(line_vals_dict)
                         discount_val.append(line.discount)
 
-                if order.is_shopify_order and order.shopify_instance_id.id == instance_id.id and update == True:
+               if order.shopify_order_map_id and order.shopify_order_map_id.shopify_instance_id.id == instance_id.id and update == True:
 
-                    end = "draft_orders/{}.json".format(order.shopify_order_id)
+                    end = "draft_orders/{}.json".format(order.shopify_order_map_id.shopify_order_id)
                     url = self.get_order_url(instance_id, endpoint=end)
                     payload = {
                         "draft_order": {
-                            "id": order.shopify_order_id,
+                            "id": order.shopify_order_map_id.shopify_order_id,
                             "line_items": line_val_list,
                             "customer": {
                                 "id": order.partner_id.shopify_customer_id
@@ -398,8 +384,12 @@ class SaleOrder(models.Model):
                         }
                     }
                     response = requests.put(url, headers=headers, data=json.dumps(payload))
+                    # Actualizar el registro del mapa si es necesario
+                    order.shopify_order_map_id.write({
+                        'shopify_order_id': payload.get('draft_order', {}).get('id', order.shopify_order_map_id.shopify_order_id),
+                    })
                 else:
-                    if not order.is_shopify_order:
+                    if not order.shopify_order_map_id:
                         payload = {
                             "draft_order": {
                                 "line_items": line_val_list,
@@ -412,22 +402,30 @@ class SaleOrder(models.Model):
                         }
 
                         response = requests.post(url, headers=headers, data=json.dumps(payload))
-
+                        if response and response.content:
+                            
+                                        
+                                                      
+                            draft_orders = response.json()
+                            draft_order = draft_orders.get('draft_order', [])
+                            if draft_order:
+                                order.name = draft_order.get('name')
+                                # Se crea el registro en la clase mapa con la info de Shopify
+                                map_vals = {
+                                    'order_id': order.id,
+                                    'shopify_order_id': draft_order.get('id'),
+                                    'shopify_instance_id': instance_id.id,
+                                }
+                                shopify_map = self.env['shopify.order.map'].sudo().create(map_vals)
+                                order.shopify_order_map_id = shopify_map.id
+                                _logger.info("Draft Order Created/Updated Successfully")
+                    else:
+                        # Caso de actualización sin respuesta o error
+                        _logger.info("Draft Order Creation/Updated Failed")
+                        _logger.info("Failed", response.content)
                 if response:
                     if response.content:
                         _logger.info(response.content)
-                        draft_orders = response.json()
-                        draft_order = draft_orders.get('draft_order', [])
-                        if draft_order:
-                            order.name = draft_order.get('name')
-                            order.shopify_order_status = draft_order.get('status')
-                            order.is_shopify_order = True
-                            order.is_exported = True
-                            order.shopify_order_id = draft_order.get('id')
-                            _logger.info("Draft Order Created/Updated Successfully")
-                    else:
-                        _logger.info("Draft Order Creation/Updated Failed")
-                        _logger.info("Failed", response.content)
                 else:
                     _logger.info("Nothing Create / Updated")
 

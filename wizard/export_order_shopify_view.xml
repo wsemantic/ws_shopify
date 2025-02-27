@@ -34,7 +34,7 @@
         <field name="binding_model_id" ref="model_sale_order"/>
         <field name="binding_view_types">form,list</field>
         <field name="target">new</field>
-        <field name="view_id" ref="pragtech_odoo_shopify_connector.view_export_orders_shopify"/>
+        <field name="view_id" ref="ws_shopify.view_export_orders_shopify"/>
     </record>
 
 </odoo>

@@ -13,13 +13,8 @@ _logger = logging.getLogger(__name__)
 class ResPartner(models.Model):
     _inherit = 'res.partner'
 
-    shopify_customer_id = fields.Char('Shopify Customer Id')
-    shopify_instance_id = fields.Many2one('shopify.instance', string='Shopify Instance')
     shopify_instance_ids = fields.Many2many('shopify.instance', string='Shopify Instances')
-    is_shopify_customer = fields.Boolean('Is Shopify Customer', default=False)
-    shopify_order_count = fields.Integer('Shopify Order Count')
     shopify_note = fields.Text('Shopify Note')
-    is_exported = fields.Boolean(string="Exported")
     
     shopify_partner_map_ids = fields.One2many(
         'shopify.partner.map',
@@ -149,11 +144,19 @@ class ResPartner(models.Model):
                         vals_update['country_id'] = country_id
                     
                     # Siempre se actualizan estos campos
-                    vals_update['shopify_customer_id'] = shopify_customer.get('id')
-                    vals_update['is_shopify_customer'] = True
                     vals_update['vat'] = shopify_customer.get('vat')
                         
                     partner.with_context(no_vat_validation=True).write(vals_update)
+                    # Actualizar o crear mapping en el partner para esta instancia
+                    mapping = partner.shopify_partner_map_ids.filtered(lambda m: m.shopify_instance_id.id == shopify_instance_id.id)
+                    if mapping:
+                        mapping.write({'shopify_partner_id': shopify_customer.get('id')})
+                    else:
+                        self.env['shopify.partner.map'].create({
+                            'partner_id': partner.id,
+                            'shopify_partner_id': shopify_customer.get('id'),
+                            'shopify_instance_id': shopify_instance_id.id,
+                        })                                                 
             else:
                 _logger.info(f"WSSH Partner NO encontrado {name} id {shopify_customer.get('id')}")
                 # Se arma el diccionario completo para la creación del partner
@@ -162,11 +165,10 @@ class ResPartner(models.Model):
                     'customer_rank': 1,
                     'email': shopify_customer.get('email'),
                     'vat': shopify_customer.get('vat'),
-                    'shopify_customer_id': shopify_customer.get('id'),
+                                                                                                                 
                     'ref': 'SID' + str(shopify_customer.get('id')),
                     'is_shopify_customer': True,
-                    'phone': phone,
-                    'shopify_instance_id': shopify_instance_id.id,
+                    'phone': phone,                    
                     'shopify_note': shopify_customer.get('note'),
                     'street': street,
                     'street2': street2,
@@ -175,7 +177,12 @@ class ResPartner(models.Model):
                     'country_id': country_id,
                 }
                 partner = super(ResPartner, self).with_context(no_vat_validation=True).create(vals)
-
+                # Crear mapping para la nueva instancia
+                self.env['shopify.partner.map'].create({
+                    'partner_id': partner.id,
+                    'shopify_partner_id': shopify_customer.get('id'),
+                    'shopify_instance_id': shopify_instance_id.id,
+                })
             
             customer_list.append(partner.id)
         
@@ -310,12 +317,14 @@ class ResPartner(models.Model):
             for partner in partner_ids:
                 tag_vals = ','.join(str(tag.name) for tag in partner.category_id) if partner.category_id else ''
 
-                if partner.is_shopify_customer and partner.shopify_instance_id.id == instance_id.id and update == True:
-                    end = "customers/{}.json".format(partner.shopify_customer_id)
+                # Buscar mapping para esta instancia
+                mapping = partner.shopify_partner_map_ids.filtered(lambda m: m.shopify_instance_id.id == instance_id.id)                                                    
+                if mapping and update == True:                                              
+                    end = "customers/{}.json".format(mapping.shopify_partner_id)
                     url = self.get_customer_url(instance_id, endpoint=end)
                     data = {
                         "customer": {
-                            "id": partner.shopify_customer_id,
+                            "id": mapping.shopify_partner_id,
                             "email": partner.email,
                             "note": partner.shopify_note,
                             "phone":partner.phone,
@@ -370,9 +379,15 @@ class ResPartner(models.Model):
                         customer = shopify_customers.get('customer', [])
                         if customer:
                             partner.is_shopify_customer = True
-                            partner.shopify_customer_id = customer.get('id')
-                            partner.shopify_instance_id = instance_id.id
-                            partner.is_exported = True
+                            # Actualizar o crear mapping según corresponda
+                            if mapping:
+                                mapping.write({'shopify_partner_id': customer.get('id')})
+                            else:
+                                self.env['shopify.partner.map'].create({
+                                    'partner_id': partner.id,
+                                    'shopify_partner_id': customer.get('id'),
+                                    'shopify_instance_id': instance_id.id,
+                                })
                             _logger.info("customer created/updated successfully")
                     else:
                         _logger.info("customer creation/updation failed")

@@ -5,7 +5,7 @@
               name="Shopify"
               active="True"
               sequence="6"
-              web_icon="pragtech_odoo_shopify_connector,static/description/icon.png"/>
+              web_icon="ws_shopify,static/description/icon.png"/>
 
     <menuitem id="shopify_sales_menu"
               name="Sales"

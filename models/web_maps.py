@@ -34,3 +34,12 @@ class ShopifyPartnerMap(models.Model):
     shopify_partner_id = fields.Char(string='Shopify Partner ID', required=True)
     shopify_instance_id = fields.Many2one('shopify.instance', string='Shopify Instance', required=True)
 
+
+class ShopifyOrderMap(models.Model):
+    _name = 'shopify.order.map'
+    _description = 'Shopify Order Map'
+
+    order_id = fields.Many2one('sale.order', string='Order', required=True, ondelete='cascade')
+    shopify_order_id = fields.Char(string='Shopify Order ID', required=True)
+    shopify_instance_id = fields.Many2one('shopify.instance', string='Shopify Instance', required=True)
+

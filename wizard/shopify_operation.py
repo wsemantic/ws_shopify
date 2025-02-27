@@ -56,7 +56,7 @@ class ShopifyOperation(models.TransientModel):
             if customers:
                 self.shopify_instance_id.shopify_last_date_customer_import = datetime.now()
                 ids = customers
-                action_name = "pragtech_odoo_shopify_connector.action_shopify_customer"
+                action_name = "ws_shopify.action_shopify_customer"
         elif self.shopify_operation == 'import_shopify_products':
             # call method to import products from shopify to odoo
             products = self.env['product.template'].import_shopify_products(self.shopify_instance_id,
@@ -65,17 +65,17 @@ class ShopifyOperation(models.TransientModel):
             if products:
                 self.shopify_instance_id.shopify_last_date_product_import = datetime.now()
                 ids = products
-                action_name = "pragtech_odoo_shopify_connector.action_product_template_shopify"
+                action_name = "ws_shopify.action_product_template_shopify"
         elif self.shopify_operation == 'import_locations':
             locations = self.env['shopify.location'].import_shopify_locations(self.shopify_instance_id)
             if locations:
                 ids = locations
-                action_name = "pragtech_odoo_shopify_connector.shopify_location_action"
+                action_name = "ws_shopify.shopify_location_action"
         elif self.shopify_operation == 'update_stock':
             products = self.env['product.template'].update_stock(self.shopify_instance_id)
             if products:
                 ids = products
-                action_name = "pragtech_odoo_shopify_connector.action_product_product_shopify"
+                action_name = "ws_shopify.action_product_product_shopify"
         elif self.shopify_operation == 'import_draft_orders':
             # call method to import draft orders from shopify to odoo
             draft_orders = self.env['sale.order'].import_shopify_draft_orders(self.shopify_instance_id,
@@ -85,7 +85,7 @@ class ShopifyOperation(models.TransientModel):
             if draft_orders:
                 self.shopify_instance_id.shopify_last_date_draftorder_import = datetime.now()
                 ids = draft_orders
-                action_name = "pragtech_odoo_shopify_connector.action_order_quotation_shopify"
+                action_name = "ws_shopify.action_order_quotation_shopify"
         elif self.shopify_operation == 'import_shopify_orders':
             # call method to import orders from shopify to odoo
             orders = self.env['sale.order'].import_shopify_orders(self.shopify_instance_id,
@@ -95,7 +95,7 @@ class ShopifyOperation(models.TransientModel):
             if orders:
                 self.shopify_instance_id.shopify_last_date_order_import = datetime.now()
                 ids = orders
-                action_name = "pragtech_odoo_shopify_connector.action_sale_order_shopify"
+                action_name = "ws_shopify.action_sale_order_shopify"
 
 
         elif self.shopify_operation == 'import_gift_cards':
@@ -103,14 +103,14 @@ class ShopifyOperation(models.TransientModel):
             gift_cards = self.env['gift.card'].import_gift_cards(self.shopify_instance_id)
             if gift_cards:
                 ids = gift_cards
-                action_name = "pragtech_odoo_shopify_connector.shopify_gift_card_action"
+                action_name = "ws_shopify.shopify_gift_card_action"
 
         elif self.shopify_operation == 'import_payouts':
             # call method to import payouts from shopify to odoo
             payouts = self.env['shopify.payout'].import_payouts(self.shopify_instance_id)
             if payouts:
                 ids = payouts
-                action_name = "pragtech_odoo_shopify_connector.shopify_payouts_action"
+                action_name = "ws_shopify.shopify_payouts_action"
 
         if ids and action_name:
             action = self.env.ref(action_name).sudo().read()[0]
@@ -137,7 +137,7 @@ class ShopifyOperation(models.TransientModel):
         elif self.export_shopify_operation == 'export_shopify_stock':
             products = self.env['product.template'].export_stock_to_shopify(self.shopify_instance_id)
             if products:
-                action = self.env.ref("pragtech_odoo_shopify_connector.action_product_product_shopify").sudo().read()[0]
+                action = self.env.ref("ws_shopify.action_product_product_shopify").sudo().read()[0]
                 action["domain"] = [("id", "in", products)]
                 return action
             else:
