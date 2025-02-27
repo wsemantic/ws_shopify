@@ -369,7 +369,7 @@ class SaleOrder(models.Model):
                         line_val_list.append(line_vals_dict)
                         discount_val.append(line.discount)
 
-               if order.shopify_order_map_id and order.shopify_order_map_id.shopify_instance_id.id == instance_id.id and update == True:
+                if order.shopify_order_map_id and order.shopify_order_map_id.shopify_instance_id.id == instance_id.id and update == True:
 
                     end = "draft_orders/{}.json".format(order.shopify_order_map_id.shopify_order_id)
                     url = self.get_order_url(instance_id, endpoint=end)
