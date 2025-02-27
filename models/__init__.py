@@ -10,4 +10,4 @@ from . import shopify_locations
 from . import gift_card
 from . import shopify_payouts
 from . import stock_quant
-from . import web_map
+from . import web_maps
