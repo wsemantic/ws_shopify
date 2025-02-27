@@ -15,7 +15,11 @@ _logger = logging.getLogger(__name__)
 class SaleOrder(models.Model):
     _inherit = 'sale.order'
 
-
+    shopify_order_map_ids = fields.One2many(
+        'shopify.order.map',  # modelo relacionado
+        'order_id',           # campo inverso en shopify.order.map
+        string='Shopify Order Maps'
+    )
 
     def import_shopify_draft_orders(self, shopify_instance_ids, skip_existing_order, from_date, to_date):
         if shopify_instance_ids == False:
@@ -114,8 +118,10 @@ class SaleOrder(models.Model):
                     'shopify_order_id': order.get('id'),
                     'shopify_instance_id': shopify_instance_id.id,
                 }
-                shopify_map = self.env['shopify.order.map'].sudo().create(map_vals)
-                sale_order_rec.shopify_order_map_id = shopify_map.id
+                shopify_map = self.env['shopify.order.map'].sudo().create(map_vals)                
+                sale_order_rec.write({
+                    'shopify_order_map_ids': [(4, shopify_map.id)]
+                })
                 self.create_shopify_order_line(sale_order_rec, order, skip_existing_order, shopify_instance_id)
 
                 return sale_order_rec
@@ -332,7 +338,7 @@ class SaleOrder(models.Model):
         order_ids = self.sudo().browse(self._context.get("active_ids"))
         if not order_ids:
             if update == False:
-                order_ids = self.sudo().search([('shopify_order_map_id', '=', False)])
+                order_ids = self.sudo().search([('shopify_order_map_ids', '=', False)])
             else:
                 order_ids = self.sudo().search([])
 
@@ -368,14 +374,18 @@ class SaleOrder(models.Model):
                         }
                         line_val_list.append(line_vals_dict)
                         discount_val.append(line.discount)
+                        
+                map_for_instance = order.shopify_order_map_ids.filtered(
+                    lambda m: m.shopify_instance_id.id == instance_id.id
+                )
 
-                if order.shopify_order_map_id and order.shopify_order_map_id.shopify_instance_id.id == instance_id.id and update == True:
-
-                    end = "draft_orders/{}.json".format(order.shopify_order_map_id.shopify_order_id)
-                    url = self.get_order_url(instance_id, endpoint=end)
+                if map_for_instance and update == True:
+                    shopify_map = map_for_instance[0]
+                    end = "draft_orders/{}.json".format(shopify_map.shopify_order_id)
+                    url_update = self.get_order_url(instance_id, endpoint=end)
                     payload = {
                         "draft_order": {
-                            "id": order.shopify_order_map_id.shopify_order_id,
+                            "id": shopify_map.shopify_order_id,
                             "line_items": line_val_list,
                             "customer": {
                                 "id": order.partner_id.shopify_customer_id
@@ -383,13 +393,13 @@ class SaleOrder(models.Model):
                             "tax_lines": [],
                         }
                     }
-                    response = requests.put(url, headers=headers, data=json.dumps(payload))
+                    response = requests.put(url_update, headers=headers, data=json.dumps(payload))
                     # Actualizar el registro del mapa si es necesario
-                    order.shopify_order_map_id.write({
-                        'shopify_order_id': payload.get('draft_order', {}).get('id', order.shopify_order_map_id.shopify_order_id),
+                    shopify_map.write({
+                        'shopify_order_id': payload.get('draft_order', {}).get('id', shopify_map.shopify_order_id),
                     })
                 else:
-                    if not order.shopify_order_map_id:
+                    if not map_for_instance:
                         payload = {
                             "draft_order": {
                                 "line_items": line_val_list,
@@ -403,9 +413,6 @@ class SaleOrder(models.Model):
 
                         response = requests.post(url, headers=headers, data=json.dumps(payload))
                         if response and response.content:
-                            
-                                        
-                                                      
                             draft_orders = response.json()
                             draft_order = draft_orders.get('draft_order', [])
                             if draft_order:
@@ -417,7 +424,9 @@ class SaleOrder(models.Model):
                                     'shopify_instance_id': instance_id.id,
                                 }
                                 shopify_map = self.env['shopify.order.map'].sudo().create(map_vals)
-                                order.shopify_order_map_id = shopify_map.id
+                                order.write({
+                                    'shopify_order_map_ids': [(4, shopify_map.id)]
+                                })
                                 _logger.info("Draft Order Created/Updated Successfully")
                     else:
                         # Caso de actualización sin respuesta o error
@@ -430,8 +439,6 @@ class SaleOrder(models.Model):
                     _logger.info("Nothing Create / Updated")
 
 
-class SaleOrderLine(models.Model):
-    _inherit = "sale.order.line"
 
-    shopify_line_id = fields.Char("Shopify Line", copy=False)
+
     is_gift_card_line = fields.Boolean(copy=False, default=False)

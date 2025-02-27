@@ -13,9 +13,6 @@ _logger = logging.getLogger(__name__)
 class ResPartner(models.Model):
     _inherit = 'res.partner'
 
-    shopify_instance_ids = fields.Many2many('shopify.instance', string='Shopify Instances')
-    shopify_note = fields.Text('Shopify Note')
-    
     shopify_partner_map_ids = fields.One2many(
         'shopify.partner.map',
         'partner_id',
@@ -169,7 +166,6 @@ class ResPartner(models.Model):
                     'ref': 'SID' + str(shopify_customer.get('id')),
                     'is_shopify_customer': True,
                     'phone': phone,                    
-                    'shopify_note': shopify_customer.get('note'),
                     'street': street,
                     'street2': street2,
                     'city': city,
@@ -326,7 +322,6 @@ class ResPartner(models.Model):
                         "customer": {
                             "id": mapping.shopify_partner_id,
                             "email": partner.email,
-                            "note": partner.shopify_note,
                             "phone":partner.phone,
                             "tags":tag_vals,
                             "addresses": [
