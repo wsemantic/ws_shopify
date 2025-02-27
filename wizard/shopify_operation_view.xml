@@ -2,7 +2,7 @@
 <odoo>
         <!--create a wizard view for shopify operations -->
         <record model="ir.ui.view" id="shopify_operation_view">
-            <field name="name"  widget="radio">shopify.operation.wizard</field>
+            <field name="name">shopify.operation.wizard</field>
             <field name="model">shopify.operation</field>
             <field name="arch" type="xml">
                 <form string="Shopify Operation">
