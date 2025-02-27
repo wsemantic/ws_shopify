@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <odoo>
         <!--create a wizard view for shopify operations -->
         <record model="ir.ui.view" id="shopify_operation_view">
