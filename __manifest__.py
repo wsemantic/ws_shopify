@@ -15,6 +15,9 @@
         'security/ir.model.access.csv',
         'data/ir_cron_data.xml',
         'wizard/shopify_operation_view.xml',
+        'wizard/export_customer_shopify_view.xml',
+        'wizard/export_products_shopify_view.xml',
+        'wizard/export_order_shopify_view.xml',
 
     ],
     'images': ['static/description/shopify_connector_app.gif'],
