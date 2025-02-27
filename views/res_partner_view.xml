@@ -1,6 +1,5 @@
 <?xml version="1.0"?>
 <odoo>
-    <!--Tree view of res partner-->
     <record id="view_shopify_customer_tree" model="ir.ui.view">
         <field name="name">res.partner.tree</field>
         <field name="model">res.partner</field>
@@ -8,15 +7,16 @@
         <field name="arch" type="xml">
             <tree sample="1">
                 <field name="name"/>
-                <field name="shopify_customer_id"/>
+                <!-- Campo existencial que muestra 'Exportado' si existen mapeos -->
+                <field name="shopify_exported"/>
                 <field name="phone"/>
                 <field name="email"/>
             </tree>
         </field>
     </record>
 
-   <record id="view_shopify_customer_form" model="ir.ui.view">
-        <field name="name">res.partner.form.inherit</field>
+    <record id="view_shopify_customer_form" model="ir.ui.view">
+        <field name="name">res.partner.form.inherit.shopify</field>
         <field name="model">res.partner</field>
         <field name="inherit_id" ref="base.view_partner_form"/>
         <field name="arch" type="xml">
@@ -24,13 +24,26 @@
                 <page name="shopify_details" string="Shopify">
                     <group>
                         <group>
-                            <field name="shopify_customer_id"/>
+                            <!-- Se mantienen los campos antiguos si se necesitan para compatibilidad o lógica -->
                             <field name="shopify_instance_id"/>
-                            <field name="is_shopify_customer"/>
                         </group>
                         <group>
                             <field name="shopify_order_count"/>
                             <field name="shopify_note"/>
+                        </group>
+                        <group string="Mapeos de Shopify">
+                            <field name="shopify_partner_map_ids">
+                                <tree editable="bottom">
+                                    <field name="shopify_partner_id"/>
+                                    <field name="shopify_instance_id"/>
+                                </tree>
+                                <form string="Shopify Partner Map">
+                                    <group>
+                                        <field name="shopify_partner_id"/>
+                                        <field name="shopify_instance_id"/>
+                                    </group>
+                                </form>
+                            </field>
                         </group>
                     </group>
                 </page>
@@ -44,18 +57,19 @@
         <field name="inherit_id" ref="base.view_res_partner_filter"/>
         <field name="arch" type="xml">
             <search>
+                <!-- Se actualiza el filtro para que se base en la existencia de mapeos -->
                 <filter string="Shopify Customers" name="shopify_customers"
-                        domain="[('is_shopify_customer', '=', True)]"/>
+                        domain="[('shopify_partner_map_ids','!=',False)]"/>
             </search>
         </field>
     </record>
 
-    <!--Action of res partner-->
+    <!-- Action of res.partner -->
     <record id="action_shopify_customer" model="ir.actions.act_window">
         <field name="name">Customers</field>
         <field name="type">ir.actions.act_window</field>
         <field name="res_model">res.partner</field>
-        <field name="domain">[('is_shopify_customer','=',True)]</field>
+        <field name="domain">[('shopify_partner_map_ids','!=',False)]</field>
         <field name="view_mode">form,tree</field>
         <field name="context">{'search_default_shopify_customers': 1}</field>
         <field name="view_id" ref="view_shopify_customer_tree"/>
@@ -70,5 +84,4 @@
             </div>
         </field>
     </record>
-
 </odoo>

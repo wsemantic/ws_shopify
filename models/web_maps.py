@@ -6,7 +6,7 @@ class ShopifyProductMap(models.Model):
     _description = 'Mapping del producto entre la web y Odoo'
 
     web_product_id = fields.Char(string="ID del producto en la web", required=True)
-    odoo_id = fields.Many2one('product.template', string="Producto en Odoo", required=True)
+    odoo_id = fields.Many2one('product.template.attribute.value', string="Producto en Odoo", required=True)
     shopify_instance_id = fields.Many2one('shopify.instance', string='Shopify Instance')
 
 class ShopifyVariantMap(models.Model):

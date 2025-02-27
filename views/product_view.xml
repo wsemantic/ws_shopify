@@ -1,59 +1,54 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-<!--    <record model="ir.ui.view" id="product_template_shopify_tree">-->
-<!--        <field name="name">product.template.tree.view.inherit</field>-->
-<!--        <field name="model">product.template</field>-->
-<!--        <field name="inherit_id" ref="product.product_template_tree_view"/>-->
-<!--        <field name="arch" type="xml">-->
-
-<!--            <xpath expr="//[@name='default_code']" position="attributes">-->
-<!--                <attribute name="invisible">1</attribute>-->
-<!--            </xpath>-->
-
-<!--        </field>-->
-<!--    </record>-->
-
-    <!--Product Template Form View Inherited -->
+    <!-- Product Template Form View Inherited -->
     <record model="ir.ui.view" id="product_template_shopify_form">
-        <field name="name">product.template.form.view.inherit</field>
+        <field name="name">product.template.form.view.inherit.shopify</field>
         <field name="model">product.template</field>
         <field name="inherit_id" ref="product.product_template_only_form_view"/>
         <field name="arch" type="xml">
-
             <xpath expr="//page[@name='general_information']" position="after">
                 <page string="Shopify">
                     <group>
-                        <group>
-                            <field name="shopify_product_id" invisible="0"/>
-                            <field name="is_shopify_product" invisible="0"/>
-                            <field name="shopify_instance_id" invisible="0"/>
-                        </group>
-                        <group>
-                            <field name="shopify_barcode"/>
-                            <field name="shopify_sku"/>
-                            <field name="is_exported"/>
+                        <group string="Mapping">
+                            <field name="shopify_product_map_ids">
+                                <tree editable="bottom">
+                                    <field name="web_product_id"/>
+                                    <!-- Se muestra la referencia al producto para deducir el color -->
+                                    <field name="odoo_id" string="Color" options="{'no_create': True}"/>
+                                    <field name="shopify_instance_id"/>
+                                </tree>
+                                <form string="Shopify Product Map">
+                                    <group>
+                                        <field name="web_product_id"/>
+                                        <field name="odoo_id" string="Color" options="{'no_create': True}"/>
+                                        <field name="shopify_instance_id"/>
+                                    </group>
+                                </form>
+                            </field>
                         </group>
                     </group>
-                        <field name="shopify_image_ids" widget="one2many" nolabel="1">
-                            <tree create="false">
-                                <field name="shopify_image" widget="image"/>
-                            </tree>
-                        </field>
                 </page>
             </xpath>
-
+            <!-- Se eliminan los campos heredados de la antigua integración -->
+            <xpath expr="//field[@name='shopify_product_id']" position="replace"/>
+            <xpath expr="//field[@name='is_shopify_product']" position="replace"/>
+            <xpath expr="//field[@name='shopify_instance_id']" position="replace"/>
+            <xpath expr="//field[@name='shopify_barcode']" position="replace"/>
+            <xpath expr="//field[@name='shopify_sku']" position="replace"/>
+            <xpath expr="//field[@name='is_exported']" position="replace"/>
+            <xpath expr="//field[@name='shopify_image_ids']" position="replace"/>
         </field>
     </record>
 
     <record id="view_product_template_search_inherit_shopify" model="ir.ui.view">
-        <field name="name">view.product.template.search.inherit</field>
+        <field name="name">view.product.template.search.inherit.shopify</field>
         <field name="model">product.template</field>
         <field name="inherit_id" ref="product.product_template_search_view"/>
         <field name="arch" type="xml">
             <search>
                 <filter string="Shopify Products" name="shopify_products"
-                        domain="[('is_shopify_product', '=', True)]"/>
+                        domain="[('shopify_product_map_ids','!=',False)]"/>
             </search>
         </field>
     </record>
@@ -67,62 +62,65 @@
         <field name="view_mode">tree,form</field>
     </record>
 
-
-    <!--Product Variant Form View Inherited -->
+    <!-- Product Variant Form View Inherited -->
     <record model="ir.ui.view" id="product_variant_shopify_form">
-        <field name="name">product.product.form.view.inherit</field>
+        <field name="name">product.product.form.view.inherit.shopify</field>
         <field name="model">product.product</field>
         <field name="inherit_id" ref="product.product_normal_form_view"/>
         <field name="arch" type="xml">
-
             <xpath expr="//page[@name='general_information']" position="after">
                 <page string="Shopify">
                     <group>
-                        <group>
-                            <field name="shopify_product_id" invisible="0"/>
-                            <field name="is_shopify_product" invisible="0"/>
-                            <field name="shopify_instance_id" invisible="0"/>
+                        <group string="Mapping">
+                            <field name="shopify_variant_map_ids">
+                                <tree editable="bottom">
+                                    <field name="web_variant_id"/>
+                                    <!-- Se muestra la relación al producto para deducir el color -->
+                                    <field name="odoo_id" string="Color" options="{'no_create': True}"/>
+                                    <field name="shopify_instance_id"/>
+                                </tree>
+                                <form string="Shopify Variant Map">
+                                    <group>
+                                        <field name="web_variant_id"/>
+                                        <field name="odoo_id" string="Color" options="{'no_create': True}"/>
+                                        <field name="shopify_instance_id"/>
+                                    </group>
+                                </form>
+                            </field>
                         </group>
-                        <group>
-                            <field name="shopify_variant_id" invisible="0"/>
-                            <field name="shopify_barcode"/>
-                            <field name="shopify_sku"/>
-                            <field name="is_exported"/>
-                        </group>
-                    </group>
-                     <group string="Images" colspan="4">
-                        <field name="shopify_image_ids"
-                               mode="kanban" options="{'create_text':'Add a Media'}" nolabel="1">
-                        </field>
                     </group>
                 </page>
             </xpath>
-
+            <!-- Se eliminan los campos heredados de la antigua integración -->
+            <xpath expr="//field[@name='shopify_product_id']" position="replace"/>
+            <xpath expr="//field[@name='is_shopify_product']" position="replace"/>
+            <xpath expr="//field[@name='shopify_instance_id']" position="replace"/>
+            <xpath expr="//field[@name='shopify_variant_id']" position="replace"/>
+            <xpath expr="//field[@name='shopify_barcode']" position="replace"/>
+            <xpath expr="//field[@name='shopify_sku']" position="replace"/>
+            <xpath expr="//field[@name='is_exported']" position="replace"/>
+            <xpath expr="//field[@name='shopify_image_ids']" position="replace"/>
         </field>
     </record>
 
     <record id="view_product_product_search_inherit_shopify" model="ir.ui.view">
-        <field name="name">view.product.product.search.inherit</field>
+        <field name="name">view.product.product.search.inherit.shopify</field>
         <field name="model">product.product</field>
         <field name="inherit_id" ref="product.product_search_form_view"/>
         <field name="arch" type="xml">
             <search>
                 <filter string="Shopify Products" name="shopify_products"
-                        domain="[('is_shopify_product', '=', True)]"/>
+                        domain="[('shopify_variant_map_ids','!=',False)]"/>
             </search>
         </field>
     </record>
-
 
     <record id="action_product_product_shopify" model="ir.actions.act_window">
         <field name="name">Product Variants</field>
         <field name="type">ir.actions.act_window</field>
         <field name="res_model">product.product</field>
         <field name="view_id" ref="product.product_product_tree_view"/>
-<!--        <field name="context">{'search_default_shopify_products': 1}</field>-->
         <field name="view_mode">tree,form</field>
     </record>
 
-
 </odoo>
-

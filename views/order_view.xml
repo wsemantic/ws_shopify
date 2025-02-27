@@ -2,67 +2,70 @@
 <odoo>
 
     <record model="ir.ui.view" id="sale_order_shopify_form">
-        <field name="name">sale.order.form.view.inherit</field>
+        <field name="name">sale.order.form.view.inherit.shopify</field>
         <field name="model">sale.order</field>
         <field name="inherit_id" ref="sale.view_order_form"/>
         <field name="arch" type="xml">
-
             <xpath expr="//page[@name='customer_signature']" position="after">
                 <page string="Shopify">
                     <group>
-                        <group>
-                            <field name="shopify_order_id" invisible="0"/>
-                            <field name="shopify_order_number" invisible="1"/>
-                            <field name="shopify_instance_id"/>
-                            <field name="is_shopify_order" invisible="0"/>
-                        </group>
-                        <group>
-                            <field name="shopify_order_status"/>
-                            <field name="order_shopify_id"/>
-                            <field name="is_exported"/>
+                        <group string="Order Mapping">
+                            <field name="shopify_order_map_ids">
+                                <tree editable="bottom">
+                                    <field name="shopify_order_id" string="Shopify Order ID"/>
+                                    <field name="shopify_instance_id" string="Instance"/>
+                                </tree>
+                                <form string="Shopify Order Map">
+                                    <group>
+                                        <field name="shopify_order_id" string="Shopify Order ID"/>
+                                        <field name="shopify_instance_id" string="Instance"/>
+                                    </group>
+                                </form>
+                            </field>
                         </group>
                     </group>
                 </page>
             </xpath>
-
+            <!-- Eliminamos los campos heredados de la integración single-web -->
+            <xpath expr="//field[@name='shopify_order_id']" position="replace"/>
+            <xpath expr="//field[@name='shopify_order_number']" position="replace"/>
+            <xpath expr="//field[@name='shopify_instance_id']" position="replace"/>
+            <xpath expr="//field[@name='is_shopify_order']" position="replace"/>
+            <xpath expr="//field[@name='shopify_order_status']" position="replace"/>
+            <xpath expr="//field[@name='order_shopify_id']" position="replace"/>
+            <xpath expr="//field[@name='is_exported']" position="replace"/>
         </field>
     </record>
 
     <record id="view_quotation_tree_inherit_shopify" model="ir.ui.view">
-        <field name="name">quotation.tree.inherit.sale</field>
+        <field name="name">quotation.tree.inherit.sale.shopify</field>
         <field name="model">sale.order</field>
         <field name="inherit_id" ref="sale.view_quotation_tree_with_onboarding"/>
         <field name="arch" type="xml">
             <xpath expr="//field[@name='activity_ids']" position="after">
-                <field name="shopify_order_id" readonly="1"/>
-                <field name="shopify_instance_id" readonly="1"/>
-                <field name="is_shopify_order" readonly="1"/>
+                <field name="shopify_order_map_ids" widget="many2many_tags" readonly="1" options="{'no_create': True}" string="Shopify Mappings"/>
             </xpath>
         </field>
     </record>
 
     <record id="view_order_tree_inherit_shopify" model="ir.ui.view">
-        <field name="name">sale.order.tree.inherit.sale</field>
+        <field name="name">sale.order.tree.inherit.sale.shopify</field>
         <field name="model">sale.order</field>
         <field name="inherit_id" ref="sale.view_order_tree"/>
         <field name="arch" type="xml">
-
             <xpath expr="//field[@name='activity_ids']" position="after">
-                <field name="shopify_order_id" readonly="1"/>
-                <field name="shopify_instance_id" readonly="1"/>
-                <field name="is_shopify_order" readonly="1"/>
+                <field name="shopify_order_map_ids" widget="many2many_tags" readonly="1" options="{'no_create': True}" string="Shopify Mappings"/>
             </xpath>
-
         </field>
     </record>
 
-     <record id="view_sale_order_search_inherit_shopify" model="ir.ui.view">
-        <field name="name">view.sale.order.search.inherit</field>
+    <record id="view_sale_order_search_inherit_shopify" model="ir.ui.view">
+        <field name="name">view.sale.order.search.inherit.shopify</field>
         <field name="model">sale.order</field>
         <field name="inherit_id" ref="sale.view_sales_order_filter"/>
         <field name="arch" type="xml">
             <xpath expr="//filter[@name='my_sale_orders_filter']" position="after">
-                <filter string="Shopify Orders" name="shopify_orders" domain="[('is_shopify_order', '=', True)]"/>
+                <filter string="Shopify Orders" name="shopify_orders" domain="[('shopify_order_map_ids','!=',False)]"/>
             </xpath>
         </field>
     </record>
@@ -87,6 +90,4 @@
         <field name="view_mode">tree,form</field>
     </record>
 
-
 </odoo>
-
