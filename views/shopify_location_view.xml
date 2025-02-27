@@ -1,5 +1,4 @@
 <odoo>
-    <data>
         <!--Shopify Location form view -->
         <record model="ir.ui.view" id="shopify_location_form_view">
             <field name="name">shopify.location.form</field>
@@ -47,6 +46,4 @@
             <field name="view_id" ref="shopify_location_tree_view"/>
             <field name="view_mode">tree,form</field>
         </record>
-
-    </data>
 </odoo>

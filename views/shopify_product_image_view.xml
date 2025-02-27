@@ -1,5 +1,4 @@
 <odoo>
-    <data>
         <!--Shopify Image form view -->
         <record model="ir.ui.view" id="shopify_image_form_view">
             <field name="name">shopify.product.image.form</field>
@@ -47,7 +46,4 @@
             <field name="view_id" ref="shopify_image_tree_view"/>
             <field name="view_mode">tree,form</field>
         </record>
-
-
-    </data>
 </odoo>

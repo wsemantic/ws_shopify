@@ -1,5 +1,4 @@
 <odoo>
-    <data>
         <!--Shopify Gift Card form view -->
         <record model="ir.ui.view" id="shopify_gift_card_form_view">
             <field name="name">gift.card.form</field>
@@ -48,6 +47,4 @@
             <field name="view_id" ref="shopify_gift_card_tree_view"/>
             <field name="view_mode">tree,form</field>
         </record>
-
-    </data>
 </odoo>

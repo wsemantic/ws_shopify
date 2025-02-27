@@ -1,5 +1,4 @@
 <odoo>
-    <data>
         <!--Shopify Payout form view -->
         <record model="ir.ui.view" id="shopify_payout_form_view">
             <field name="name">shopify.payout.form</field>
@@ -47,6 +46,4 @@
             <field name="view_id" ref="shopify_payout_tree_view"/>
             <field name="view_mode">tree,form</field>
         </record>
-
-    </data>
 </odoo>

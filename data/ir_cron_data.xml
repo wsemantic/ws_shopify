@@ -105,6 +105,5 @@
             <field name="state">code</field>
             <field name="active" eval="False"/>
         </record>
-
     </data>
 </odoo>
