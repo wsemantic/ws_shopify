@@ -13,7 +13,8 @@
 
     'data': [
         'security/ir.model.access.csv',
-        'data/ir_cron_data.xml'
+        'data/ir_cron_data.xml',
+        'wizard/shopify_operation_view.xml',
 
     ],
     'images': ['static/description/shopify_connector_app.gif'],

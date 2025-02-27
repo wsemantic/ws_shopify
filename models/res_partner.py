@@ -19,6 +19,17 @@ class ResPartner(models.Model):
         string='Shopify Mappings'
     )
 
+    shopify_exported = fields.Boolean(
+        string="Exportado",
+        compute="_compute_shopify_exported",
+        store=True
+    )
+
+    @api.depends('shopify_partner_map_ids')
+    def _compute_shopify_exported(self):
+        for partner in self:
+            partner.shopify_exported = bool(partner.shopify_partner_map_ids)
+            
     def import_shopify_customers(self, shopify_instance_ids, skip_existing_customer):
         """
         Extiende la importación de clientes para filtrar por fecha de creación,

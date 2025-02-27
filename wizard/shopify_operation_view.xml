@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
+	<data>
         <!--create a wizard view for shopify operations -->
         <record model="ir.ui.view" id="shopify_operation_view">
             <field name="name"  widget="radio">shopify.operation.wizard</field>
@@ -74,4 +75,5 @@
             <field name="view_mode">form</field>
             <field name="target">new</field>
         </record>
+	</data>
 </odoo>
