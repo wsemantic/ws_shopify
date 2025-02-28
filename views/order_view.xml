@@ -26,14 +26,6 @@
                     </group>
                 </page>
             </xpath>
-            <!-- Eliminamos los campos heredados de la integración single-web -->
-            <xpath expr="//field[@name='shopify_order_id']" position="replace"/>
-            <xpath expr="//field[@name='shopify_order_number']" position="replace"/>
-            <xpath expr="//field[@name='shopify_instance_id']" position="replace"/>
-            <xpath expr="//field[@name='is_shopify_order']" position="replace"/>
-            <xpath expr="//field[@name='shopify_order_status']" position="replace"/>
-            <xpath expr="//field[@name='order_shopify_id']" position="replace"/>
-            <xpath expr="//field[@name='is_exported']" position="replace"/>
         </field>
     </record>
 
