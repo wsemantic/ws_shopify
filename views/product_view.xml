@@ -1,5 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Product Template Form View Inherited: Muestra los mapeos de color -->
-
+    <!-- Product Template Form View Inherited: pestaña "Shopify" mostrando mapeos por color -->
+    <record model="ir.ui.view" id="product_template_shopify_form">
+        <field name="name">product.template.form.view.inherit.shopify</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_only_form_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//page[@name='general_information']" position="after">
+                <page string="Shopify">
+                    <group>
+                        <!-- Se navega por las líneas de atributos filtradas por color -->
+                        <field name="attribute_line_ids" domain="[('attribute_id.name','=','color')]" nolabel="1">
+                            <tree>
+                                <field name="attribute_id" string="Atributo"/>
+                                <!-- Dentro de cada línea, se muestran los valores (product.template.attribute.value) -->
+                                <field name="product_template_value_ids" widget="one2many_list" nolabel="1">
+                                    <tree editable="bottom">
+                                        <field name="name" string="Color"/>
+                                        <!-- Desde cada valor se muestran los mapeos asociados -->
+                                        <field name="product_map_ids" widget="one2many_list" nolabel="1">
+                                            <tree editable="bottom">
+                                                <field name="shopify_instance_id" string="Instancia"/>
+                                                <field name="web_product_id" string="ID Producto Shopify"/>
+                                            </tree>
+                                        </field>
+                                    </tree>
+                                </field>
+                            </tree>
+                        </field>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
 </odoo>
+
