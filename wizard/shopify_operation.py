@@ -14,7 +14,7 @@ class ShopifyOperation(models.TransientModel):
     _description = 'Shopify Operation'
 
     # initialize fields
-    shopify_instance_id = fields.Many2one('shopify.instance', string='Shopify Instance')
+    shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance')
     import_export_selection = fields.Selection([('import', 'Import'), ('export', 'Export')], string="Import/Export",
                                                default='import')
     shopify_operation = fields.Selection(

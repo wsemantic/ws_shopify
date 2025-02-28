@@ -8,7 +8,7 @@ class OrderExportInstance(models.Model):
     _name = 'order.export.instance'
     _description = 'Order Export'
 
-    shopify_instance_id = fields.Many2one('shopify.instance', string="Shopify Instance")
+    shopify_instance_id = fields.Many2one('shopify.web', string="Shopify Instance")
     update_order = fields.Boolean(string="Update Order")
 
     def order_instance_for_exp(self):
@@ -20,7 +20,7 @@ class OrderExportInstance(models.Model):
     def default_get(self, fields):
         res = super(OrderExportInstance, self).default_get(fields)
         try:
-            instance = self.env['shopify.instance'].search([])[0]
+            instance = self.env['shopify.web'].search([])[0]
         except Exception as error:
             raise UserError(_("Please create and configure shopify Instance"))
 

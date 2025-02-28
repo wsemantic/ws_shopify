@@ -15,7 +15,7 @@ _logger = logging.getLogger(__name__)
 class ProductTemplateAttributeValue(models.Model):
     _inherit = 'product.template.attribute.value'
 
-    product_map_ids = fields.One2many(
+    shopify_product_map_ids = fields.One2many(
         "shopify.product.map",
         "odoo_id",
         string="Shopify Product Mappings",
@@ -31,13 +31,13 @@ class ProductProduct(models.Model):
     shopify_barcode = fields.Char('Shopify Barcode')
     shopify_sku = fields.Char('Shopify SKU')
 
-    variant_map_ids = fields.One2many(
+    shopify_variant_map_ids = fields.One2many(
         "shopify.variant.map",
         "odoo_id",
         string="Shopify Variant Mappings",
         help="Mappings to Shopify variants across multiple websites"
     )
-    stock_map_ids = fields.One2many(
+    shopify_stock_map_ids = fields.One2many(
         "shopify.stock.map",
         "odoo_id",
         string="Shopify Stock Mappings",
@@ -48,14 +48,6 @@ class ProductProduct(models.Model):
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
 
-    shopify_instance_id = fields.Many2one('shopify.instance', string='Shopify Instance')
-    shopify_product_id = fields.Char('Shopify Product Id')
-    shopify_product_status = fields.Char('Shopify Product Status')
-    
-    shopify_barcode = fields.Char('Shopify Barcode')
-    shopify_sku = fields.Char('Shopify SKU')
-    shopify_image_ids = fields.One2many("shopify.product.image", "shopify_template_id")
-    is_exported = fields.Boolean(string="Exported")
 
     def get_products_url(self, shopify_instance_id, endpoint):
         shop_url = "https://{}.myshopify.com/admin/api/{}/{}".format(shopify_instance_id.shopify_host,
@@ -64,7 +56,7 @@ class ProductTemplate(models.Model):
 
     def import_shopify_products(self, shopify_instance_ids, skip_existing_products, from_date, to_date):
         if not shopify_instance_ids:
-            shopify_instance_ids = self.env['shopify.instance'].sudo().search([('shopify_active', '=', True)])
+            shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
         
         for shopify_instance_id in shopify_instance_ids:
             _logger.info("WSSH Starting product import for instance %s", shopify_instance_id.name)                                                                                                  
@@ -123,8 +115,8 @@ class ProductTemplate(models.Model):
           
           # Buscar si el producto ya existe en Odoo por shopify_product_id en product.template.attribute.value          
           existing_attribute_value = self.env['product.template.attribute.value'].sudo().search([
-              ('product_map_ids.web_product_id', '=', shopify_product_id),
-              ('product_map_ids.shopify_instance_id', '=', shopify_instance_id.id),
+              ('shopify_product_map_ids.web_product_id', '=', shopify_product_id),
+              ('shopify_product_map_ids.shopify_instance_id', '=', shopify_instance_id.id),
           ], limit=1)
         
           if existing_attribute_value:
@@ -141,7 +133,7 @@ class ProductTemplate(models.Model):
               # Buscar por shopify_variant_id o default_code (SKU)
               existing_variant = self.env['product.product'].sudo().search([
                   '|',
-                  ('variant_map_ids.web_variant_id', '=', shopify_variant_id),
+                  ('shopify_variant_map_ids.web_variant_id', '=', shopify_variant_id),
                   ('default_code', '=', sku),
               ], limit=1)
               
@@ -151,7 +143,7 @@ class ProductTemplate(models.Model):
                       lambda v: v.attribute_id.name.lower() == 'color'
                   )
                   if color_values:
-                      color_map = color_values.product_map_ids.filtered(
+                      color_map = color_values.shopify_product_map_ids.filtered(
                           lambda m: m.shopify_instance_id == shopify_instance_id)
                       if not color_map:
                           self.env['shopify.product.map'].create({
@@ -278,7 +270,7 @@ class ProductTemplate(models.Model):
     def update_stock(self, shopify_instance_ids):
         location_ids = self.get_locations()
         if shopify_instance_ids == False:
-            shopify_instance_ids = self.env['shopify.instance'].sudo().search([('shopify_active', '=', True)])
+            shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
         for shopify_instance_id in shopify_instance_ids:
             url = self.get_inventory_url(shopify_instance_id, endpoint='inventory_levels.json')
             access_token = shopify_instance_id.shopify_shared_secret
@@ -491,7 +483,7 @@ class ProductTemplate(models.Model):
                         }
                     }
 
-                    product_map = template_attribute_value.product_map_ids.filtered(
+                    product_map = template_attribute_value.shopify_product_map_ids.filtered(
                         lambda m: m.shopify_instance_id == instance_id)
                     if product_map:
                         if update:
@@ -619,11 +611,11 @@ class ProductTemplate(models.Model):
         Actualiza los IDs de las variantes de Shopify en las variantes de Odoo.
         """
         for odoo_variant in odoo_variants:
-            variant_map = odoo_variant.variant_map_ids.filtered(
+            variant_map = odoo_variant.shopify_variant_map_ids.filtered(
                 lambda m: m.shopify_instance_id == instance_id)
             if variant_map and variant_map.web_variant_id != shopify_variants[0].get('id'):
                 variant_map.write({'web_variant_id': shopify_variants[0].get('id')})
-                stock_map = odoo_variant.stock_map_ids.filtered(
+                stock_map = odoo_variant.shopify_stock_map_ids.filtered(
                     lambda m: m.shopify_instance_id == instance_id)
                 if stock_map and stock_map.web_stock_id != shopify_variants[0].get('inventory_item_id'):
                     stock_map.write({'web_stock_id': shopify_variants[0].get('inventory_item_id')})
@@ -775,7 +767,7 @@ class ProductAttribute(models.Model):
     _inherit = 'product.attribute'
 
     is_shopify = fields.Boolean(string='Is Shopify?')
-    shopify_instance_id = fields.Many2one('shopify.instance', string='Shopify Instance')
+    shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance')
     shopify_id = fields.Char(string='Shopify Attribute Id')
 
 
@@ -784,5 +776,5 @@ class ProductAttributeValue(models.Model):
     _inherit = 'product.attribute.value'
 
     is_shopify = fields.Boolean(string='Is Shopify?')
-    shopify_instance_id = fields.Many2one('shopify.instance', string='Shopify Instance')
+    shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance')
     shopify_id = fields.Char(string='Shopify Attribute Value Id')

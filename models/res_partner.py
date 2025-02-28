@@ -38,7 +38,7 @@ class ResPartner(models.Model):
         """
         # Si no se especifican instancias, se buscan las activas.
         if not shopify_instance_ids:
-            shopify_instance_ids = self.env['shopify.instance'].sudo().search([('shopify_active', '=', True)])
+            shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
 
         _logger.info("WSSH Import customer %i ", len(shopify_instance_ids))
         for shopify_instance_id in shopify_instance_ids:
@@ -310,7 +310,7 @@ class ResPartner(models.Model):
             partner_ids = self.sudo().search(domain)
 
         if shopify_instance_ids == False:
-            shopify_instance_ids = self.env['shopify.instance'].sudo().search([('shopify_active', '=', True)])
+            shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
         for instance_id in shopify_instance_ids:
             url = self.get_customer_url(instance_id, endpoint='customers.json')
 

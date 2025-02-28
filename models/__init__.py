@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from . import shopify_instance
+from . import shopify_web
 from . import res_partner
 from . import sale_order
 from . import product

@@ -23,7 +23,7 @@ class SaleOrder(models.Model):
 
     def import_shopify_draft_orders(self, shopify_instance_ids, skip_existing_order, from_date, to_date):
         if shopify_instance_ids == False:
-            shopify_instance_ids = self.env['shopify.instance'].sudo().search([('shopify_active', '=', True)])
+            shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
         for shopify_instance_id in shopify_instance_ids:
             url = self.get_order_url(shopify_instance_id, endpoint='draft_orders.json')
             access_token = shopify_instance_id.shopify_shared_secret
@@ -286,7 +286,7 @@ class SaleOrder(models.Model):
 
     def import_shopify_orders(self, shopify_instance_ids, skip_existing_order, from_date, to_date):
         if shopify_instance_ids == False:
-            shopify_instance_ids = self.env['shopify.instance'].sudo().search([('shopify_active', '=', True)])
+            shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
         for shopify_instance_id in shopify_instance_ids:
             self.import_shopify_draft_orders(shopify_instance_id, skip_existing_order, from_date, to_date)
             # import shopify oders from shopify to odoo
@@ -343,7 +343,7 @@ class SaleOrder(models.Model):
                 order_ids = self.sudo().search([])
 
         if shopify_instance_ids == False:
-            shopify_instance_ids = self.env['shopify.instance'].sudo().search([('shopify_active', '=', True)])
+            shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
         for instance_id in shopify_instance_ids:
             url = self.get_order_url(instance_id, endpoint='draft_orders.json')
             access_token = instance_id.shopify_shared_secret

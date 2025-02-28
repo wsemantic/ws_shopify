@@ -8,7 +8,7 @@ import requests
 _logger = logging.getLogger(__name__)
 
 class ShopifyInstance(models.Model):
-    _name = 'shopify.instance'
+    _name = 'shopify.web'
     _description = 'Shopify Instance'
 
     name = fields.Char('Name', required=True)

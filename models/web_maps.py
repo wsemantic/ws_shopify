@@ -7,7 +7,7 @@ class ShopifyProductMap(models.Model):
 
     web_product_id = fields.Char(string="ID del producto en la web", required=True)
     odoo_id = fields.Many2one('product.template.attribute.value', string="Producto en Odoo", required=True)
-    shopify_instance_id = fields.Many2one('shopify.instance', string='Shopify Instance')
+    shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance')
 
 class ShopifyVariantMap(models.Model):
     _name = 'shopify.variant.map'
@@ -15,7 +15,7 @@ class ShopifyVariantMap(models.Model):
 
     web_variant_id = fields.Char(string="ID de la variante en la web", required=True)
     odoo_id = fields.Many2one('product.product', string="Variante en Odoo", required=True)
-    shopify_instance_id = fields.Many2one('shopify.instance', string='Shopify Instance')
+    shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance')
 
 class ShopifyStockMapping(models.Model):
     _name = 'shopify.stock.map'
@@ -23,7 +23,7 @@ class ShopifyStockMapping(models.Model):
 
     web_stock_id = fields.Char(string="ID de stock en la web", required=True)
     odoo_id = fields.Many2one('stock.quant', string="Quant en Odoo", required=True)
-    shopify_instance_id = fields.Many2one('shopify.instance', string='Shopify Instance')
+    shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance')
     
 class ShopifyPartnerMap(models.Model):
     _name = 'shopify.partner.map'
@@ -32,7 +32,7 @@ class ShopifyPartnerMap(models.Model):
 
     partner_id = fields.Many2one('res.partner', string='Partner', required=True, ondelete='cascade')
     shopify_partner_id = fields.Char(string='Shopify Partner ID', required=True)
-    shopify_instance_id = fields.Many2one('shopify.instance', string='Shopify Instance', required=True)
+    shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance', required=True)
 
 
 class ShopifyOrderMap(models.Model):
@@ -41,5 +41,5 @@ class ShopifyOrderMap(models.Model):
 
     order_id = fields.Many2one('sale.order', string='Order', required=True, ondelete='cascade')
     shopify_order_id = fields.Char(string='Shopify Order ID', required=True)
-    shopify_instance_id = fields.Many2one('shopify.instance', string='Shopify Instance', required=True)
+    shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance', required=True)
 

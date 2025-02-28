@@ -17,7 +17,7 @@ class ShopifyPayout(models.Model):
     shopify_id = fields.Char(string="Shopify Payout ID")
     status = fields.Selection([('scheduled', 'Scheduled'), ('in_transit', 'In Transit'), ('paid', 'Paid'),
                                ('failed', 'Failed'), ('cancelled', 'Cancelled')], string="Status")
-    shopify_instance_id = fields.Many2one('shopify.instance', string="Shopify Instance")
+    shopify_instance_id = fields.Many2one('shopify.web', string="Shopify Instance")
     is_shopify = fields.Boolean(string="Is Shopify")
     state = fields.Selection([('draft', 'Draft'), ('partially_generated', 'Partially Generated'),
                               ('generated', 'Generated'), ('partially_processed', 'Partially Processed'),
@@ -29,7 +29,7 @@ class ShopifyPayout(models.Model):
 
     def import_payouts(self, shopify_instance_ids):
         if shopify_instance_ids == False:
-            shopify_instance_ids = self.env['shopify.instance'].sudo().search([('shopify_active', '=', True)])
+            shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
         for shopify_instance_id in shopify_instance_ids:
             url = self.get_payout_url(shopify_instance_id, endpoint='shopify_payments/payouts.json')
             access_token = shopify_instance_id.shopify_shared_secret

@@ -2,8 +2,8 @@
 
         <!--Shopify Instance form view -->
         <record model="ir.ui.view" id="shopify_instance_form_view">
-            <field name="name">shopify.instance.form</field>
-            <field name="model">shopify.instance</field>
+            <field name="name">shopify.web.form</field>
+            <field name="model">shopify.web</field>
             <field name="arch" type="xml">
                 <form string="Shopify Instance">
                     <header>
@@ -48,8 +48,8 @@
 
         <!-- instance tree view based on defined form view -->
         <record model="ir.ui.view" id="shopify_instance_tree_view">
-            <field name="name">shopify.instance.tree</field>
-            <field name="model">shopify.instance</field>
+            <field name="name">shopify.web.tree</field>
+            <field name="model">shopify.web</field>
             <field name="arch" type="xml">
                 <tree string="Shopify Instance">
                     <field name="name"/>
@@ -65,7 +65,7 @@
         <!-- create action for shopify instance -->
         <record model="ir.actions.act_window" id="shopify_action_instance">
             <field name="name">Shopify Instance</field>
-            <field name="res_model">shopify.instance</field>
+            <field name="res_model">shopify.web</field>
             <field name="view_id" ref="shopify_instance_tree_view"/>
             <field name="view_mode">tree,form</field>
         </record>

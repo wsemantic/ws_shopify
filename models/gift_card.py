@@ -18,13 +18,13 @@ class GiftCard(models.Model):
     customer_id = fields.Many2one('res.partner', string="Customer")
     expiry_date = fields.Date(string="Expiry Date")
     state = fields.Selection([('active', 'Active'), ('inactive', 'Inactive')], string="State", default="active")
-    shopify_instance_id = fields.Many2one('shopify.instance', string='Shopify Instance')
+    shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance')
     shopify_gift_card_id = fields.Char('Shopify Gift Card Id')
     is_shopify = fields.Boolean('Is Shopify', default=False)
 
     def import_gift_cards(self, shopify_instance_ids):
         if shopify_instance_ids == False:
-            shopify_instance_ids = self.env['shopify.instance'].sudo().search([('shopify_active', '=', True)])
+            shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
         for shopify_instance_id in shopify_instance_ids:
             url = self.get_card_url(shopify_instance_id, endpoint='gift_cards.json')
             access_token = shopify_instance_id.shopify_shared_secret

@@ -12,7 +12,7 @@ class ShopifyLocation(models.Model):
 
     name = fields.Char('Name', required=True)
     shopify_location_id = fields.Char('Shopify Location ID')
-    shopify_instance_id = fields.Many2one('shopify.instance', string="Shopify Instance")
+    shopify_instance_id = fields.Many2one('shopify.web', string="Shopify Instance")
     legacy = fields.Boolean('Is Legacy Location', help="Whether this is a fulfillment service location. If true, then"
                                                        "the location is a fulfillment service location. If false, then"
                                                        "the location was created by the merchant and isn't tied to a"
@@ -26,7 +26,7 @@ class ShopifyLocation(models.Model):
 
     def import_shopify_locations(self, shopify_instance_ids):
         if shopify_instance_ids == False:
-            shopify_instance_ids = self.env['shopify.instance'].sudo().search([('shopify_active','=',True)])
+            shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active','=',True)])
         for shopify_instance_id in shopify_instance_ids:
             url = self.get_location_url(shopify_instance_id, endpoint='locations.json')
             access_token = shopify_instance_id.shopify_shared_secret
