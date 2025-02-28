@@ -42,5 +42,15 @@
         <field name="context">{'search_default_shopify_products': 1}</field>
         <field name="view_mode">tree,form</field>
     </record>
+	
+    <record id="action_product_product_shopify" model="ir.actions.act_window">
+        <field name="name">Product Variants</field>
+        <field name="type">ir.actions.act_window</field>
+        <field name="res_model">product.product</field>
+        <field name="view_id" ref="product.product_product_tree_view"/>
+<!--        <field name="context">{'search_default_shopify_products': 1}</field>-->
+        <field name="view_mode">tree,form</field>
+    </record>
+	
 </odoo>
 
