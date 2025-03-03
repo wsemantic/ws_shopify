@@ -70,7 +70,7 @@ class ProductTemplate(models.Model):
             params = {
                 "limit": 250,  # Ajustar el tamaño de la página según sea necesario
                 "order": "id asc",
-                "ids": "9972360511834",  
+                "ids": "10037873607002",  
             }
             
             if from_date and to_date:
