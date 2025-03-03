@@ -651,8 +651,8 @@ class ProductTemplate(models.Model):
                 
                 if shopify_location:
                     domain = [('product_id', '=', odoo_variant.id)]
-                    if shopify_location.stock_warehouse_id:
-                        domain.append(('location_id', '=', shopify_location.stock_warehouse_id.id))
+                    if shopify_location.import_stock_warehouse_id:
+                        domain.append(('location_id', '=', shopify_location.import_stock_warehouse_id.id))
                     
                     stock_quant = self.env['stock.quant'].sudo().search(domain, limit=1)
                     if stock_quant:
