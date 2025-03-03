@@ -8,3 +8,8 @@ access_products_export_user,product_export_instance,model_product_export_instanc
 access_orders_export_user,order_export_instance,model_order_export_instance,base.group_user,1,1,1,1
 access_gift_cards_user,gift_card,model_gift_card,base.group_user,1,1,1,1
 access_shopify_payout_user,shopify_payout,model_shopify_payout,base.group_user,1,1,1,1
+access_shopify_mappro_user,shopify_map_product,model_shopify_product_map,base.group_user,1,1,1,1
+access_shopify_mapvar_user,shopify_map_variant,model_shopify_variant_map,base.group_user,1,1,1,1
+access_shopify_mapcust_user,shopify_map_partner,model_shopify_partner_map,base.group_user,1,1,1,1
+access_shopify_mapord_user,shopify_map_order,model_shopify_order_map,base.group_user,1,1,1,1
+access_shopify_mapstock_user,shopify_map_stock,model_shopify_stock_map,base.group_user,2,2,2,2
