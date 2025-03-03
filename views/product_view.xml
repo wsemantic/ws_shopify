@@ -18,7 +18,7 @@
                                     <tree editable="bottom">
                                         <field name="name" string="Color"/>
                                         <!-- Desde cada valor se muestran los mapeos asociados -->
-                                        <field name="product_map_ids" widget="one2many_list" nolabel="1">
+                                        <field name="shopify_product_map_ids" widget="one2many_list" nolabel="1">
                                             <tree editable="bottom">
                                                 <field name="shopify_instance_id" string="Instancia"/>
                                                 <field name="web_product_id" string="ID Producto Shopify"/>
