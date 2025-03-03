@@ -199,7 +199,7 @@ class SaleOrder(models.Model):
             price=round(float(lineship.get('price'))/1.21,2)
             if price>0:
                 shipping = self.env['delivery.carrier'].sudo().search(
-                    [('name', '=', lineship.get('title'))], limit=1)
+                    [('name', '=', lineship.get('title')),('shopify_instance_id', '=', shopify_instance_id.id)], limit=1)
                 if not shipping:
                     delivery_product = self.env['product.product'].sudo().create({
                         'name': lineship.get('title'),
