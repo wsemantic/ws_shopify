@@ -202,7 +202,7 @@ class SaleOrder(models.Model):
                     [('name', '=', lineship.get('title')),('shopify_instance_id', '=', shopify_instance_id.id)], limit=1)
                 if not shipping:
                     delivery_product = self.env['product.product'].sudo().create({
-                        'name': lineship.get('title'),
+                        'name': shopify_instance_id.name +'.'+ lineship.get('title'),
                         'detailed_type': 'product',
                     })
                     vals = {
