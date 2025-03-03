@@ -70,7 +70,6 @@ class ProductTemplate(models.Model):
             params = {
                 "limit": 250,  # Ajustar el tamaño de la página según sea necesario
                 "order": "id asc",
-                "page_info": None,
                 "ids": "9972360511834",  
             }
             
