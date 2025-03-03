@@ -12,4 +12,4 @@ access_shopify_mappro_user,shopify_map_product,model_shopify_product_map,base.gr
 access_shopify_mapvar_user,shopify_map_variant,model_shopify_variant_map,base.group_user,1,1,1,1
 access_shopify_mapcust_user,shopify_map_partner,model_shopify_partner_map,base.group_user,1,1,1,1
 access_shopify_mapord_user,shopify_map_order,model_shopify_order_map,base.group_user,1,1,1,1
-access_shopify_mapstock_user,shopify_map_stock,model_shopify_stock_map,base.group_user,2,2,2,2
+access_shopify_mapstock_user,shopify_map_stock,model_shopify_stock_map,base.group_user,1,1,1,1
