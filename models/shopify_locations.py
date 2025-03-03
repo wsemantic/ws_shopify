@@ -21,7 +21,7 @@ class ShopifyLocation(models.Model):
     shopify_instance_company_id = fields.Many2one('res.company', string='Company', readonly=True)
     active = fields.Boolean(default=True)
     is_shopify = fields.Boolean(default=False,string="Is shopify")
-    import_stock_warehouse_id = fields.Many2one('stock.warehouse', string='Warehouse',
+    stock_warehouse_id = fields.Many2one('stock.warehouse', string='Warehouse',
                                                 help="Selected warehouse used while Import the stock.")
 
     def import_shopify_locations(self, shopify_instance_ids):
