@@ -70,7 +70,7 @@ class ProductTemplate(models.Model):
             params = {
                 "limit": 250,  # Ajustar el tamaño de la página según sea necesario
                 "order": "id asc",
-                "ids": "10037873607002",  
+                "pageInfo": None,  
             }
             
             if from_date and to_date:
@@ -288,7 +288,7 @@ class ProductTemplate(models.Model):
 
             params = {
                 "limit": 250,  # Adjust the page size as needed
-                "page_info": None,
+                "pageInfo": None,
                 "location_ids": location_ids
             }
             all_inventory_levels = []
