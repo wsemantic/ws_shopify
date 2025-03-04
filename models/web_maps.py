@@ -8,6 +8,12 @@ class ShopifyProductMap(models.Model):
     web_product_id = fields.Char(string="ID del producto en la web", required=True)
     odoo_id = fields.Many2one('product.template.attribute.value', string="Producto en Odoo", required=True)
     shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance')
+    
+    _sql_constraints = [
+        ('product_id_shopify_instance_unique', 
+         'UNIQUE(odoo_id, shopify_instance_id)', 
+         'La combinación de Producto en Odoo y Shopify Instance debe ser única.')
+    ]
 
 class ShopifyVariantMap(models.Model):
     _name = 'shopify.variant.map'
@@ -16,7 +22,12 @@ class ShopifyVariantMap(models.Model):
     web_variant_id = fields.Char(string="ID de la variante en la web", required=True)
     odoo_id = fields.Many2one('product.product', string="Variante en Odoo", required=True)
     shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance')
-
+    _sql_constraints = [
+        ('variant_id_shopify_instance_unique', 
+         'UNIQUE(odoo_id, shopify_instance_id)', 
+         'La combinación de Variante en Odoo y Shopify Instance debe ser única.')
+    ]
+    
 class ShopifyStockMapping(models.Model):
     _name = 'shopify.stock.map'
     _description = 'Mapping de stock entre la web y Odoo'
@@ -24,6 +35,12 @@ class ShopifyStockMapping(models.Model):
     web_stock_id = fields.Char(string="ID de stock en la web", required=True)
     odoo_id = fields.Many2one('stock.quant', string="Quant en Odoo", required=True)
     shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance')
+    
+    _sql_constraints = [
+        ('stock_id_shopify_instance_unique', 
+         'UNIQUE(odoo_id, shopify_instance_id)', 
+         'La combinación de Quant en Odoo y Shopify Instance debe ser única.')
+    ]    
     
 class ShopifyPartnerMap(models.Model):
     _name = 'shopify.partner.map'
@@ -34,6 +51,11 @@ class ShopifyPartnerMap(models.Model):
     shopify_partner_id = fields.Char(string='Shopify Partner ID', required=True)
     shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance', required=True)
 
+    _sql_constraints = [
+        ('partner_id_shopify_instance_unique', 
+         'UNIQUE(partner_id, shopify_instance_id)', 
+         'La combinación de Partner y Shopify Instance debe ser única.')
+    ]
 
 class ShopifyOrderMap(models.Model):
     _name = 'shopify.order.map'
@@ -43,3 +65,8 @@ class ShopifyOrderMap(models.Model):
     shopify_order_id = fields.Char(string='Shopify Order ID', required=True)
     shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance', required=True)
 
+    _sql_constraints = [
+        ('order_id_shopify_instance_unique', 
+         'UNIQUE(order_id, shopify_instance_id)', 
+         'La combinación de Order y Shopify Instance debe ser única.')
+    ]
