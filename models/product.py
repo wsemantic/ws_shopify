@@ -439,6 +439,7 @@ class ProductTemplate(models.Model):
 
                 if not color_line:
                     # Si no hay atributo de color, procesar normalmente
+                    raise UserError(f"WSSH Producto sin color {product.name}, de momento solo soportado split por color")
                     self._export_single_product(product, instance_id, headers, update)
                     continue
 
@@ -485,29 +486,24 @@ class ProductTemplate(models.Model):
                                     "values": sorted(set(v.get(f"option{instance_id.size_option_position}", "") for v in variant_data))
                                 }
                             ],
-                            "tags": ','.join(tag.name for tag in product.product_tag_ids)
+                            "tags": ','.join(tag.name for tag in product.product_tag_ids),
+                            "variants": variant_data
                         }
                     }
 
                     product_map = template_attribute_value.shopify_product_map_ids.filtered(
                         lambda m: m.shopify_instance_id == instance_id)
-                    if product_map:
-                        if update:
-                            product_data["product"]["id"] = product_map.web_product_id
-                            url = self.get_products_url(instance_id, f'products/{product_map.web_product_id}.json')
-                            response = requests.put(url, headers=headers, data=json.dumps(product_data))
-                            _logger.info(f"WSSH Updating Shopify product {template_attribute_value.shopify_product_id}")
+                    if product_map and update:
+                        product_data["product"]["id"] = product_map.web_product_id
+                        url = self.get_products_url(instance_id, f'products/{product_map.web_product_id}.json')
+                        response = requests.put(url, headers=headers, data=json.dumps(product_data))
+                        _logger.info(f"WSSH Updating Shopify product {template_attribute_value.shopify_product_id}")
 
-                            if response.ok:
-                                # Actualizar las variantes individualmente
-                                processed_count += 1
-                                for variant in variants:
-                                    self._update_shopify_variant(variant, instance_id, headers)
-                        else:
-                            _logger.info(f"WSSH Existe variant id pero no Update {template_attribute_value.shopify_product_id}")
-                    else:
-                        # Si es un nuevo producto, enviamos también las variantes
-                        product_data["product"]["variants"] = variant_data
+                        if response.ok:
+                            # Actualizar las variantes individualmente
+                            processed_count += 1                                
+                        
+                    else:                        
                         product_data["product"]["status"]='draft'
                         url = self.get_products_url(instance_id, 'products.json')
                         response = requests.post(url, headers=headers, data=json.dumps(product_data))
@@ -523,10 +519,13 @@ class ProductTemplate(models.Model):
                                     'odoo_id': template_attribute_value.id,
                                     'shopify_instance_id': instance_id.id,
                                 })
-                                shopify_variants = shopify_product.get('variants', [])
-                                self._update_variant_ids(variants, shopify_variants,instance_id)
 
-                    if response is not None and not response.ok:
+                    if response and response.ok:
+                        shopify_product = response.json().get('product', {})
+                        if shopify_product:
+                            shopify_variants = shopify_product.get('variants', [])
+                            self._update_variant_ids(variants, shopify_variants, instance_id)
+                    elif response:
                         _logger.error(f"WSSH Error exporting product: {response.text}")
                         raise UserError(f"WSSH Error exporting product {product.name} - {template_attribute_value.name}: {response.text}")
 
@@ -538,9 +537,15 @@ class ProductTemplate(models.Model):
             instance_id.last_export_product = fields.Datetime.now()
             
     def _update_shopify_variant(self, variant, instance_id, headers):
+        
+        variant_map = variant.shopify_variant_map_ids.filtered(lambda m: m.shopify_instance_id == instance_id)
+        if not variant_map or not variant_map.web_variant_id:
+            _logger.warning("No se encontró mapping para la variante %s en la instancia %s", variant.id, instance_id.name)
+            return
+            
         """Actualiza una variante en Shopify usando el endpoint variants/<id_variant>.json"""
         variant_data = self._prepare_shopify_variant_data(variant, instance_id, is_update=True)
-        url = self.get_products_url(instance_id, f'variants/{variant.shopify_variant_id}.json')
+        url = self.get_products_url(instance_id, f'variants/{variant_map.web_variant_id}.json')
         response = requests.put(url, headers=headers, data=json.dumps({"variant": variant_data}))
         
         if response.ok:
@@ -693,9 +698,11 @@ class ProductTemplate(models.Model):
             "inventory_management": "shopify"
         }
 
-        # Si es una actualización y tenemos el ID de la variante en Shopify, lo incluimos
-        if is_update and variant.shopify_variant_id:
-            variant_data["id"] = variant.shopify_variant_id
+        if is_update:
+            # Obtener el mapping de la variante para la instancia específica
+            variant_map = variant.shopify_variant_map_ids.filtered(lambda m: m.shopify_instance_id == instance_id)
+            if variant_map and variant_map.web_variant_id:
+                variant_data["id"] = variant_map.web_variant_id
 
         if is_color_split and template_attribute_value:
             # Si estamos separando por colores, solo usamos el atributo talla
@@ -712,6 +719,7 @@ class ProductTemplate(models.Model):
                     variant_data[f"option{idx}"] = attr_val.name
 
         return variant_data
+        
                  
     def export_stock_to_shopify(self, shopify_instance):
         """
