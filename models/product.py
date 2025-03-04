@@ -406,7 +406,7 @@ class ProductTemplate(models.Model):
                 _logger.info("WSSH Starting product export SIN fecha for instance %s", instance_id.name)
                 domain = []
 
-            products_to_export = self.search(domain, order='create_date')
+            products_to_export = self.search(domain, order='create_date',limit=1)
 
             product_count = len(products_to_export)
             _logger.info("WSSH Found %d products to export for instance %s", product_count, instance_id.name)
