@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # See LICENSE file for full copyright and licensing details.
 import logging
-from odoo import models
+from odoo import models, fields
 
 logger = logging.getLogger(__name__)
 
