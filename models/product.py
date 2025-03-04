@@ -457,6 +457,10 @@ class ProductTemplate(models.Model):
                         _logger.info(f"WSSH No hay variantes con codigo {template_attribute_value.name}")
                         continue
 
+                    # Verificar si hay nuevas variantes sin mapeo
+                    new_variants = variants.filtered(
+                        lambda v: not v.shopify_variant_map_ids.filtered(lambda m: m.shopify_instance_id == instance_id)
+                    )
                     # Preparar datos para Shopify
                     variant_data = [
                         self._prepare_shopify_variant_data(variant, instance_id, template_attribute_value, True, update)
@@ -494,7 +498,7 @@ class ProductTemplate(models.Model):
                     product_map = template_attribute_value.shopify_product_map_ids.filtered(
                         lambda m: m.shopify_instance_id == instance_id)
                     if product_map:
-                        if update:
+                        if update or len(new_variants) > 0:
                             product_data["product"]["id"] = product_map.web_product_id
                             url = self.get_products_url(instance_id, f'products/{product_map.web_product_id}.json')
                             response = requests.put(url, headers=headers, data=json.dumps(product_data))
