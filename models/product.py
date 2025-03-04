@@ -504,9 +504,7 @@ class ProductTemplate(models.Model):
                                 # Actualizar las variantes individualmente
                                 processed_count += 1
                         else:
-                            _logger.info(f"WSSH Ignorar, por no update, Shopify product {template_attribute_value.shopify_product_id}")
-                                    
-                        
+                            _logger.info(f"WSSH Ignorar, por no update, Shopify product {template_attribute_value.shopify_product_id}")                                                            
                     else:                        
                         product_data["product"]["status"]='draft'
                         url = self.get_products_url(instance_id, 'products.json')
