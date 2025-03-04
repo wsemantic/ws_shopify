@@ -9,6 +9,13 @@ logger = logging.getLogger(__name__)
 class StockQuant(models.Model):
     _inherit = "stock.quant"
 
+    shopify_stock_map_ids = fields.One2many(
+        "shopify.stock.map",
+        "odoo_id",
+        string="Shopify Stock Mappings",
+        help="Mappings to Shopify stock across multiple websites"
+    )
+    
     def create_inventory_adjustment_ept(self, product_qty_data, location_id, auto_apply=False, name=""):
         
         quant_list = self.env['stock.quant']
