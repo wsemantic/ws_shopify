@@ -498,13 +498,13 @@ class ProductTemplate(models.Model):
                             product_data["product"]["id"] = product_map.web_product_id
                             url = self.get_products_url(instance_id, f'products/{product_map.web_product_id}.json')
                             response = requests.put(url, headers=headers, data=json.dumps(product_data))
-                            _logger.info(f"WSSH Updating Shopify product {template_attribute_value.shopify_product_id}")
+                            _logger.info(f"WSSH Updating Shopify product {product_map.web_product_id}")
 
                             if response.ok:
                                 # Actualizar las variantes individualmente
                                 processed_count += 1
                         else:
-                            _logger.info(f"WSSH Ignorar, por no update, Shopify product {template_attribute_value.shopify_product_id}")                                                            
+                            _logger.info(f"WSSH Ignorar, por no update, Shopify product {product_map.web_product_id}")                                                            
                     else:                        
                         product_data["product"]["status"]='draft'
                         url = self.get_products_url(instance_id, 'products.json')
