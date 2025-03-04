@@ -389,7 +389,6 @@ class ProductTemplate(models.Model):
                 break
 
         for instance_id in shopify_instance_ids:                                                                             
-            # Filtrar productos modificados desde la última exportación
             if instance_id.last_export_product:
                 _logger.info(f"WSSH Starting product export por fecha {instance_id.last_export_product} instance {instance_id.name} atcolor {color_attribute}") 
                 domain = [('write_date', '>', instance_id.last_export_product)]
@@ -398,7 +397,6 @@ class ProductTemplate(models.Model):
                 domain = []
 
             products_to_export = self.search(domain, order='create_date',limit=1)
-
             product_count = len(products_to_export)
             _logger.info("WSSH Found %d products to export for instance %s", product_count, instance_id.name)
         
@@ -414,36 +412,26 @@ class ProductTemplate(models.Model):
             processed_count = 0
             max_processed = 10  # Limitar a 10 productos exportados por ejecución
         
-            # Iterar sobre cada producto a exportar
             for product in products_to_export:                
-                #if 2>1:
-                #    continue
                 if not instance_id.split_products_by_color:
-                    # Si no hay split por colores, exportar el producto normalmente
                     raise UserError(f"WSSH De momento solo soportado split por color")
                     self._export_single_product(product, instance_id, headers, update)
                     continue
 
-                # Buscar la línea de atributo de color
                 color_line = product.attribute_line_ids.filtered(
                     lambda l: l.attribute_id.name.lower() == 'color')
-
                 if not color_line:
-                    # Si no hay atributo de color, procesar normalmente
                     raise UserError(f"WSSH Producto sin color {product.name}, de momento solo soportado split por color")
                     self._export_single_product(product, instance_id, headers, update)
                     continue
-
                
-                # Exportar cada color como un producto separado
                 for template_attribute_value in color_line.product_template_value_ids:
                     _logger.info(f"WSSH Exporting product: {product.name} (ID:{product.id}) update {update} variante {template_attribute_value.name}")
                     response = None
                     # Filtrar variantes para este color
                     variants = product.product_variant_ids.filtered(
-                        lambda v: template_attribute_value in v.product_template_attribute_value_ids
+                        lambda v: template_attribute_value in v.product_template_attribute_value_ids and v.barcode
                     )
-
                     if not variants:
                         _logger.info(f"WSSH No hay variantes con codigo {template_attribute_value.name}")
                         continue
@@ -495,7 +483,6 @@ class ProductTemplate(models.Model):
                             url = self.get_products_url(instance_id, f'products/{product_map.web_product_id}.json')
                             response = requests.put(url, headers=headers, data=json.dumps(product_data))
                             _logger.info(f"WSSH Updating Shopify product {product_map.web_product_id}")
-
                             if response.ok:
                                 # Actualizar las variantes individualmente
                                 processed_count += 1
@@ -535,6 +522,9 @@ class ProductTemplate(models.Model):
             instance_id.last_export_product = fields.Datetime.now()
             
     def _update_shopify_variant(self, variant, instance_id, headers):
+        if not variant.barcode:
+            _logger.warning(f"WSSH Skipping variant {variant.default_code} without barcode")
+            return None  # O lanzar una excepción si prefieres
         
         variant_map = variant.shopify_variant_map_ids.filtered(lambda m: m.shopify_instance_id == instance_id)
         if not variant_map or not variant_map.web_variant_id:
