@@ -429,6 +429,7 @@ class ProductTemplate(models.Model):
                 #    continue
                 if not instance_id.split_products_by_color:
                     # Si no hay split por colores, exportar el producto normalmente
+                    raise UserError(f"WSSH De momento solo soportado split por color")
                     self._export_single_product(product, instance_id, headers, update)
                     continue
 
