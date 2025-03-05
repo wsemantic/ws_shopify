@@ -63,6 +63,7 @@ class SaleOrder(models.Model):
                     break
             if all_orders:
                 orders = self.create_shopify_order(all_orders, shopify_instance_id, skip_existing_order, status='draft')
+                shopify_instance_id.shopify_last_date_order_import = fields.Datetime.now()
                 return orders
             else:
                 _logger.info("No draft orders found in Shopify.")
@@ -98,7 +99,7 @@ class SaleOrder(models.Model):
         # create a sale order
         # create a sale order line
         if order.get('customer'):
-            res_partner = self.check_customer(order.get('customer'))
+            res_partner = self.check_customer(order.get('customer'), shopify_instance_id)
             if res_partner:
                 dt = parser.isoparse(order.get('created_at'))
                 # Convertir a UTC si es necesario:
@@ -238,7 +239,7 @@ class SaleOrder(models.Model):
                                                                      shopify_instance_id.shopify_version, endpoint)
         return shop_url
 
-    def check_customer(self, customer):
+    def check_customer(self, customer, shopify_instance_id):
         # check customer is available or not
         # if not available create a customer and pass it
         # if available write and pass the customer
@@ -273,21 +274,28 @@ class SaleOrder(models.Model):
             name = customer.get('email') or _("Shopify Customer")
             _logger.info(f"WSSH asignamos name {name}")
 
-        partner_obj = self.env['res.partner'].sudo().search(
-            ['|', ('shopify_customer_id', '=', customer.get('id')), ('email', '=', customer.get('email'))],
-            limit=1)
+        partner_obj = self.env['res.partner'].sudo().search([
+            '|',
+            ('shopify_partner_map_ids.shopify_partner_id', '=', customer.get('id')),
+            ('email', '=', customer.get('email'))
+        ], limit=1)
         if name:
             customer_vals = {
-                'shopify_customer_id': customer.get('id'),
+                                                          
                 'email': customer.get('email'),
                 'name': name,
                 'phone': customer.get('phone'),
                 'shopify_note': customer.get('note'),
-                'category_id': tag_list,
+                'category_id': [(6, 0, tag_list)],
                 'is_shopify_customer': True,
             }
             if not partner_obj:
                 partner_obj = self.env['res.partner'].sudo().create(customer_vals)
+                self.env['shopify.partner.map'].sudo().create({
+                    'partner_id': partner_obj.id,
+                    'shopify_partner_id': customer.get('id'),
+                    'shopify_instance_id': shopify_instance_id.id,
+                })
             else:
                 partner_obj.category_id = [(5, 0, 0)]
             # partner_obj.sudo().write(customer_vals)
@@ -339,6 +347,7 @@ class SaleOrder(models.Model):
                     break
             if all_orders:
                 orders = self.create_shopify_order(all_orders, shopify_instance_id, skip_existing_order, status='open')
+                shopify_instance_id.shopify_last_date_order_import = fields.Datetime.now()
                 return orders
             else:
                 _logger.info("No orders found in shopify")
@@ -389,6 +398,10 @@ class SaleOrder(models.Model):
                 map_for_instance = order.shopify_order_map_ids.filtered(
                     lambda m: m.shopify_instance_id.id == instance_id.id
                 )
+                map_for_partner = order.partner_id.shopify_partner_map_ids.filtered(
+                    lambda m: m.shopify_instance_id.id == instance_id.id
+                )
+                customer_id = map_for_partner.shopify_partner_id if map_for_partner else None
 
                 if map_for_instance and update == True:
                     shopify_map = map_for_instance[0]
@@ -399,8 +412,8 @@ class SaleOrder(models.Model):
                             "id": shopify_map.shopify_order_id,
                             "line_items": line_val_list,
                             "customer": {
-                                "id": order.partner_id.shopify_customer_id
-                            },
+                                "id": customer_id
+                            } if customer_id else {},
                             "tax_lines": [],
                         }
                     }
@@ -415,8 +428,8 @@ class SaleOrder(models.Model):
                             "draft_order": {
                                 "line_items": line_val_list,
                                 "customer": {
-                                    "id": order.partner_id.shopify_customer_id
-                                },
+                                    "id": customer_id
+                                } if customer_id else {},
                                 "use_customer_default_address": True,
                                 "tax_lines": [],
                             }
