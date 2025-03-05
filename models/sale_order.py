@@ -1,18 +1,14 @@
 # inherirt class sale.order and add fields for shopify instance and shopify order id
 import datetime
 import json
-
 import requests
 from dateutil import parser
-from pytz import utc  # Usamos pytz.utc directamente
+from pytz import utc
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
-
-
 import logging
 
 _logger = logging.getLogger(__name__)
-
 
 class SaleOrder(models.Model):
     _inherit = 'sale.order'
@@ -111,7 +107,6 @@ class SaleOrder(models.Model):
                     'name': order.get('name'),
                     'create_date': date_order_value,
                     'date_order': date_order_value,
-
                 }
                                         
                 sale_order_rec = self.sudo().create(sale_order_vals)
@@ -165,7 +160,6 @@ class SaleOrder(models.Model):
                         tax = self.env['account.tax'].sudo().create(dict_tax)
                     if tax_line.get('price') != '0.00':
                         tax_list.append(tax.id)
-            # Migrado de shopify_variant_id a shopify_variant_map_ids
             product = self.env['product.product'].sudo().search([
                 ('shopify_variant_map_ids.web_variant_id', '=', line.get('variant_id')),
                 ('shopify_variant_map_ids.shopify_instance_id', '=', shopify_instance_id.id)
@@ -176,7 +170,6 @@ class SaleOrder(models.Model):
                     raise UserError(_(f"No se ha definido el producto {line.get('title')} {line.get('product_id')} variante {line.get('variant_id')}."))
                 product = generic_product
                 product_name = "{} - {}".format(generic_product.name, line.get('title'))
-                # Crear un mapping para el producto genérico si no existe
                 if not generic_product.shopify_variant_map_ids.filtered(
                     lambda m: m.shopify_instance_id == shopify_instance_id and m.web_variant_id == line.get('variant_id')
                 ):
@@ -255,6 +248,40 @@ class SaleOrder(models.Model):
         # check customer is available or not
         # if not available create a customer and pass it
         # if available write and pass the customer
+        default_address = customer.get('default_address', {})
+
+        # Priorizar campos directos del cliente, con fallback a default_address
+        first_name = customer.get('first_name') or default_address.get('first_name') or ''
+        last_name = customer.get('last_name') or default_address.get('last_name') or ''
+        email = customer.get('email') or default_address.get('email') or ''
+        phone = customer.get('phone') or default_address.get('phone') or ''
+        
+        # Construir el nombre del cliente
+        name = (first_name + ' ' + last_name).strip() or email or _("Shopify Customer")
+        _logger.info(f"WSSH nombre construido para cliente: {name}")
+
+        # Buscar primero por shopify_partner_id para asegurar que se use si existe
+        partner_obj = self.env['res.partner'].sudo().search([
+            ('shopify_partner_map_ids.shopify_partner_id', '=', customer.get('id')),
+            ('shopify_partner_map_ids.shopify_instance_id', '=', shopify_instance_id.id)
+        ], limit=1)
+        
+        # Si no se encuentra por ID, buscar por email
+        if not partner_obj:
+            partner_obj = self.env['res.partner'].sudo().search([
+                ('email', '=', email)
+            ], limit=1)
+
+        # Preparar valores del cliente
+        customer_vals = {
+            'name': name,
+            'email': email,
+            'phone': phone,
+            'shopify_note': customer.get('note'),
+            'is_shopify_customer': True,
+        }
+        
+        # Añadir tags si existen
         tags = customer.get('tags')
         tag_list = []
         if tags:
@@ -263,54 +290,31 @@ class SaleOrder(models.Model):
                 tag_id = self.env['res.partner.category'].sudo().search([('name', '=', tag)], limit=1)
                 if not tag_id:
                     tag_id = self.env['res.partner.category'].sudo().create({'name': tag})
-                    tag_list.append(tag_id.id)
-                else:
-                    tag_list.append(tag_id.id)
-                    
-        if not (customer.get('first_name') or customer.get('last_name')):            
-            # Podemos usar el email o un texto fijo como nombre
-            default_name = customer.get('email') or _("Shopify Customer")
-            # Creamos una copia modificable del diccionario
-            customer = dict(customer)
-            customer['first_name'] = default_name
-            _logger.info(f"WSSH asignamos name {default_name}")
-            
-        if customer.get('first_name') and customer.get('last_name'):
-            name = customer.get('first_name') + ' ' + customer.get('last_name')
-        elif customer.get('first_name'):
-            name = customer.get('first_name')
-        elif customer.get('last_name'):
-            name = customer.get('last_name')
-        else:
-            # Podemos usar el email o un texto fijo como nombre
-            name = customer.get('email') or _("Shopify Customer")
-            _logger.info(f"WSSH asignamos name {name}")
+                tag_list.append(tag_id.id)
+            customer_vals['category_id'] = [(6, 0, tag_list)]
 
-        partner_obj = self.env['res.partner'].sudo().search([
-            '|',
-            ('shopify_partner_map_ids.shopify_partner_id', '=', customer.get('id')),
-            ('email', '=', customer.get('email'))
-        ], limit=1)
-        if name:
-            customer_vals = {
-                                                          
-                'email': customer.get('email'),
-                'name': name,
-                'phone': customer.get('phone'),
-                'shopify_note': customer.get('note'),
-                'category_id': [(6, 0, tag_list)],
-                'is_shopify_customer': True,
-            }
-            if not partner_obj:
-                partner_obj = self.env['res.partner'].sudo().create(customer_vals)
+        # Si no se encontró un partner, crearlo
+        if not partner_obj:
+            _logger.info(f"WSSH Creando nuevo cliente: {name}")
+            partner_obj = self.env['res.partner'].sudo().create(customer_vals)
+            self.env['shopify.partner.map'].sudo().create({
+                'partner_id': partner_obj.id,
+                'shopify_partner_id': customer.get('id'),
+                'shopify_instance_id': shopify_instance_id.id,
+            })
+        else:
+            _logger.info(f"WSSH Cliente existente encontrado: {partner_obj.name}")
+            # No actualizamos el partner aquí, solo aseguramos el mapping
+            mapping = partner_obj.shopify_partner_map_ids.filtered(
+                lambda m: m.shopify_instance_id == shopify_instance_id
+            )
+            if not mapping:
                 self.env['shopify.partner.map'].sudo().create({
                     'partner_id': partner_obj.id,
                     'shopify_partner_id': customer.get('id'),
                     'shopify_instance_id': shopify_instance_id.id,
                 })
-            else:
-                partner_obj.category_id = [(5, 0, 0)]
-            # partner_obj.sudo().write(customer_vals)
+
         return partner_obj
 
     def import_shopify_orders(self, shopify_instance_ids, skip_existing_order, from_date, to_date):
@@ -473,4 +477,3 @@ class SaleOrder(models.Model):
                         _logger.info(response.content)
                 else:
                     _logger.info("Nothing Create / Updated")
-
