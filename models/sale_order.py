@@ -3,6 +3,8 @@ import datetime
 import json
 
 import requests
+from dateutil import parser
+from pytz import timezone
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
 
@@ -22,6 +24,7 @@ class SaleOrder(models.Model):
     )
 
     def import_shopify_draft_orders(self, shopify_instance_ids, skip_existing_order, from_date, to_date):
+        # Importa órdenes en borrador desde Shopify a Odoo
         if shopify_instance_ids == False:
             shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
         for shopify_instance_id in shopify_instance_ids:
@@ -35,7 +38,7 @@ class SaleOrder(models.Model):
             # Configurar parámetros para la consulta a Shopify
             params = {
                 "limit": 250,  # Ajusta el tamaño de página según sea necesario
-                "page_info": None,
+                "pageInfo": None,
                 "status": "any"
             }
             if effective_from_date:
@@ -56,7 +59,7 @@ class SaleOrder(models.Model):
                     else:
                         break
                 else:
-                    _logger.info("Error:", response.status_code)
+                    _logger.info("Error: %s", response.status_code)
                     break
             if all_orders:
                 orders = self.create_shopify_order(all_orders, shopify_instance_id, skip_existing_order, status='draft')
@@ -66,11 +69,14 @@ class SaleOrder(models.Model):
                 return []
 
     def create_shopify_order(self, orders, shopify_instance_id, skip_existing_order, status):
+        # Crea o actualiza órdenes en Odoo a partir de datos de Shopify
         order_list = []
         for order in orders:
             _logger.info(f"WSSH iterando orden {order.get('name')}")
-            shopify_order_map = self.env['shopify.order.map'].sudo().search(
-                [('shopify_order_id', '=', order.get('id'))], limit=1)
+            shopify_order_map = self.env['shopify.order.map'].sudo().search([
+                ('shopify_order_id', '=', order.get('id')),
+                ('shopify_instance_id', '=', shopify_instance_id.id)
+            ], limit=1)
             if not shopify_order_map:
                 _logger.info(f"WSSH no existe map para {order.get('name')}, creando la orden.")
                 sale_order_rec = self.prepare_shopify_order_vals(shopify_instance_id, order, skip_existing_order)
@@ -85,6 +91,7 @@ class SaleOrder(models.Model):
         return order_list   
 
     def prepare_shopify_order_vals(self, shopify_instance_id, order, skip_existing_order):
+        # Prepara los valores para crear una orden de venta en Odoo
         # call a method to check the customer is available or not
         # if not available create a customer
         # if available get the customer id
@@ -127,6 +134,7 @@ class SaleOrder(models.Model):
                 return sale_order_rec
 
     def create_shopify_order_line(self, shopify_order_id, order, skip_existing_order, shopify_instance_id):
+        # Crea líneas de orden de venta en Odoo basadas en las líneas de Shopify
         amount = 0.00
         discount = 0.00
         if order.get('applied_discount'):
@@ -199,15 +207,15 @@ class SaleOrder(models.Model):
             price=round(float(lineship.get('price'))/1.21,2)
             if price>0:
                 shipping = self.env['delivery.carrier'].sudo().search(
-                    [('name', '=', lineship.get('title')),('shopify_web_id', '=', shopify_web_id.id)], limit=1)
+                    [('name', '=', lineship.get('title')),('shopify_web_id', '=', shopify_instance_id.id)], limit=1)
                 if not shipping:
                     delivery_product = self.env['product.product'].sudo().create({
-                        'name': shopify_web_id.name +'.'+ lineship.get('title'),
+                        'name': shopify_instance_id.name +'.'+ lineship.get('title'),
                         'detailed_type': 'product',
                     })
                     vals = {
                         'is_shopify': True,
-                        'shopify_web_id': shopify_web_id.id,
+                        'shopify_web_id': shopify_instance_id.id,
                         'name': lineship.get('title'),
                         'product_id': delivery_product.id,
                     }
@@ -225,6 +233,7 @@ class SaleOrder(models.Model):
         return True
 
     def get_order_url(self, shopify_instance_id, endpoint):
+        # Construye la URL para la API de Shopify basada en la instancia y el endpoint
         shop_url = "https://{}.myshopify.com/admin/api/{}/{}".format(shopify_instance_id.shopify_host,
                                                                      shopify_instance_id.shopify_version, endpoint)
         return shop_url
@@ -285,6 +294,7 @@ class SaleOrder(models.Model):
         return partner_obj
 
     def import_shopify_orders(self, shopify_instance_ids, skip_existing_order, from_date, to_date):
+        # Importa órdenes completas desde Shopify a Odoo
         if shopify_instance_ids == False:
             shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
         for shopify_instance_id in shopify_instance_ids:
@@ -325,7 +335,7 @@ class SaleOrder(models.Model):
                     else:
                         break
                 else:
-                    _logger.info("Error:", response.status_code)
+                    _logger.info("Error: %s", response.status_code)
                     break
             if all_orders:
                 orders = self.create_shopify_order(all_orders, shopify_instance_id, skip_existing_order, status='open')
@@ -335,6 +345,7 @@ class SaleOrder(models.Model):
                 return []        
 
     def export_orders_to_shopify(self, shopify_instance_ids, update):
+        # Exporta órdenes de Odoo a Shopify como borradores
         order_ids = self.sudo().browse(self._context.get("active_ids"))
         if not order_ids:
             if update == False:
@@ -438,7 +449,3 @@ class SaleOrder(models.Model):
                 else:
                     _logger.info("Nothing Create / Updated")
 
-
-
-
-    is_gift_card_line = fields.Boolean(copy=False, default=False)
