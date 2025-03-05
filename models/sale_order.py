@@ -4,7 +4,7 @@ import json
 
 import requests
 from dateutil import parser
-from pytz import timezone
+from pytz import utc
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
 
@@ -102,8 +102,8 @@ class SaleOrder(models.Model):
             res_partner = self.check_customer(order.get('customer'), shopify_instance_id)
             if res_partner:
                 dt = parser.isoparse(order.get('created_at'))
-                # Convertir a UTC si es necesario:
-                dt_utc = dt.astimezone(timezone.utc)
+                # Convertir a UTC si es necesario:                
+                dt_utc = dt.astimezone(utc)
                 date_order_value = fields.Datetime.to_string(dt_utc)
                 
                 sale_order_vals = {
