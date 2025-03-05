@@ -170,14 +170,7 @@ class SaleOrder(models.Model):
                     raise UserError(_(f"No se ha definido el producto {line.get('title')} {line.get('product_id')} variante {line.get('variant_id')}."))
                 product = generic_product
                 product_name = "{} - {}".format(generic_product.name, line.get('title'))
-                if not generic_product.shopify_variant_map_ids.filtered(
-                    lambda m: m.shopify_instance_id == shopify_instance_id and m.web_variant_id == line.get('variant_id')
-                ):
-                    self.env['shopify.variant.map'].sudo().create({
-                        'odoo_id': generic_product.id,
-                        'web_variant_id': line.get('variant_id'),
-                        'shopify_instance_id': shopify_instance_id.id,
-                    })
+
             else:
                 product_name = line.get('title')
                 
