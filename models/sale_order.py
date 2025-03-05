@@ -87,65 +87,21 @@ class SaleOrder(models.Model):
 
         return order_list   
 
-    def prepare_shopify_order_vals(self, shopify_instance_id, order, skip_existing_order):
-        # Prepara los valores para crear una orden de venta en Odoo
-        # call a method to check the customer is available or not
-        # if not available create a customer
-        # if available get the customer id
-        # create a sale order
-        # create a sale order line
-        if order.get('customer'):
-            res_partner = self.check_customer(order.get('customer'), shopify_instance_id)
-            if res_partner:
-                dt = parser.isoparse(order.get('created_at'))
-                # Convertir a UTC si es necesario:
-                dt_utc = dt.astimezone(utc)
-                date_order_value = fields.Datetime.to_string(dt_utc)
-                
-                sale_order_vals = {
-                    'partner_id': res_partner.id,
-                    'name': order.get('name'),
-                    'create_date': date_order_value,
-                    'date_order': date_order_value,
-                }
-                                        
-                sale_order_rec = self.sudo().create(sale_order_vals)
-                sale_order_rec.sudo().write({
-                    'date_order': date_order_value,
-                })
-                _logger.info("WSSH fecha pedido %s", date_order_value)
-                sale_order_rec.state = 'draft'
-                # Se crea el registro en la clase mapa con los campos específicos de Shopify
-                map_vals = {
-                    'order_id': sale_order_rec.id,
-                    'shopify_order_id': order.get('id'),
-                    'shopify_instance_id': shopify_instance_id.id,
-                }
-                shopify_map = self.env['shopify.order.map'].sudo().create(map_vals)                
-                sale_order_rec.write({
-                    'shopify_order_map_ids': [(4, shopify_map.id)]
-                })
-                self.create_shopify_order_line(sale_order_rec, order, skip_existing_order, shopify_instance_id)
-
-                return sale_order_rec
-
     def create_shopify_order_line(self, shopify_order_id, order, skip_existing_order, shopify_instance_id):
         # Crea líneas de orden de venta en Odoo basadas en las líneas de Shopify
-        amount = 0.00
-        discount = 0.00
-        if order.get('applied_discount'):
-            amount = float(order.get('applied_discount').get('amount'))
+        # Calcular el porcentaje total de descuento usando total_discounts antes de procesar las líneas
+        total_discount_percentage = 0.0
+        total_discounts = float(order.get('total_discounts', 0.0))
+        if total_discounts > 0:
+            subtotal = sum(float(line.get('price', 0)) * line.get('quantity', 1) for line in order.get('line_items', []))
+            if subtotal > 0:
+                total_discount_percentage = round((total_discounts / subtotal) * 100, 2)
 
-        if len(order.get('line_items')) > 1:
-            discount = amount / len(order.get('line_items'))
-        else:
-            discount = amount
+        # Si hay líneas existentes y no se salta la actualización, eliminarlas
+        if shopify_order_id.order_line and not skip_existing_order:
+            shopify_order_id.order_line.unlink()
 
         dict_tax = {}
-
-        if shopify_order_id.order_line and skip_existing_order == False:
-            shopify_order_id.order_line = [(5, 0, 0)]
-            
         for line in order.get('line_items'):
             tax_list = []
             if line.get('tax_lines'):
@@ -170,26 +126,18 @@ class SaleOrder(models.Model):
                     raise UserError(_(f"No se ha definido el producto {line.get('title')} {line.get('product_id')} variante {line.get('variant_id')}."))
                 product = generic_product
                 product_name = "{} - {}".format(generic_product.name, line.get('title'))
-
+                # No creamos mapping para el producto genérico, ya que es único en Odoo
             else:
                 product_name = line.get('title')
                 
             if product:
-                # Precio recibido de Shopify (incluye IVA)
-                price_incl = float(line.get('price')) - float(line.get('total_discount'))
-
-                # Calcular la tasa total de IVA a partir de tax_lines, o definir una tasa fija
+                # Precio recibido de Shopify (incluye IVA y descuento ya aplicado)
+                price_incl = float(line.get('price')) - float(line.get('total_discount', 0))
                 tax_rate_total = 0.0
                 for tax_line in line.get('tax_lines', []):
                     if tax_line.get('rate'):
                         tax_rate_total += float(tax_line.get('rate'))
-                # En caso de que no exista información de impuestos, se puede asumir 0%
-                if tax_rate_total:
-                    price_excl = round(price_incl / (1 + tax_rate_total), 2)
-                else:
-                    price_excl = price_incl
-
-                subtotal = price_excl * line.get('quantity')
+                price_excl = round(price_incl / (1 + tax_rate_total), 2) if tax_rate_total else price_incl
 
                 shopify_order_line_vals = {
                     'order_id': shopify_order_id.id,
@@ -197,10 +145,10 @@ class SaleOrder(models.Model):
                     'name': product_name,
                     'product_uom_qty': line.get('quantity'),
                     'price_unit': price_excl,
-                    'discount': (discount / subtotal) * 100 if discount else 0.00,
+                    'discount': total_discount_percentage if total_discount_percentage else 0.0,
                     'tax_id': [(6, 0, tax_list)]
                 }
-                shopify_order_line_id = self.env['sale.order.line'].sudo().create(shopify_order_line_vals)
+                self.env['sale.order.line'].sudo().create(shopify_order_line_vals)
         
         for lineship in order.get('shipping_lines'):
             price = round(float(lineship.get('price')) / 1.21, 2)
@@ -227,7 +175,7 @@ class SaleOrder(models.Model):
                         'order_id': shopify_order_id.id,
                         'tax_id': [(6, 0, [])]
                     }
-                    shipping_so_line = self.env['sale.order.line'].sudo().create(shipping_vals)
+                    self.env['sale.order.line'].sudo().create(shipping_vals)
 
         return True
 
