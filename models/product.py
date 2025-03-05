@@ -432,7 +432,6 @@ class ProductTemplate(models.Model):
                     variants = product.product_variant_ids.filtered(
                         lambda v: template_attribute_value in v.product_template_attribute_value_ids 
                                   and v.barcode
-                                  and re.search(r'30811|30539|30561|30563', v.barcode)
                     )
                     
                     if not variants:
