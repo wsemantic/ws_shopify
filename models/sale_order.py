@@ -270,7 +270,6 @@ class SaleOrder(models.Model):
             'name': name,
             'email': email,
             'phone': phone,
-            'shopify_note': customer.get('note'),
             'is_shopify_customer': True,
         }
         
