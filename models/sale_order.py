@@ -87,6 +87,47 @@ class SaleOrder(models.Model):
 
         return order_list   
 
+    def prepare_shopify_order_vals(self, shopify_instance_id, order, skip_existing_order):
+        # Prepara los valores para crear una orden de venta en Odoo
+        # call a method to check the customer is available or not
+        # if not available create a customer
+        # if available get the customer id
+        # create a sale order
+        # create a sale order line
+        if order.get('customer'):
+            res_partner = self.check_customer(order.get('customer'), shopify_instance_id)
+            if res_partner:
+                dt = parser.isoparse(order.get('created_at'))
+                # Convertir a UTC si es necesario:
+                dt_utc = dt.astimezone(utc)
+                date_order_value = fields.Datetime.to_string(dt_utc)
+                
+                sale_order_vals = {
+                    'partner_id': res_partner.id,
+                    'name': order.get('name'),
+                    'create_date': date_order_value,
+                    'date_order': date_order_value,
+                }
+                                        
+                sale_order_rec = self.sudo().create(sale_order_vals)
+                sale_order_rec.sudo().write({
+                    'date_order': date_order_value,
+                })
+                _logger.info("WSSH fecha pedido %s", date_order_value)
+                sale_order_rec.state = 'draft'
+                # Se crea el registro en la clase mapa con los campos específicos de Shopify
+                map_vals = {
+                    'order_id': sale_order_rec.id,
+                    'shopify_order_id': order.get('id'),
+                    'shopify_instance_id': shopify_instance_id.id,
+                }
+                shopify_map = self.env['shopify.order.map'].sudo().create(map_vals)                
+                sale_order_rec.write({
+                    'shopify_order_map_ids': [(4, shopify_map.id)]
+                })
+                self.create_shopify_order_line(sale_order_rec, order, skip_existing_order, shopify_instance_id)
+
+                return sale_order_rec
     def create_shopify_order_line(self, shopify_order_id, order, skip_existing_order, shopify_instance_id):
         # Crea líneas de orden de venta en Odoo basadas en las líneas de Shopify
         # Calcular el porcentaje total de descuento usando total_discounts antes de procesar las líneas
