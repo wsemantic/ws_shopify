@@ -4,7 +4,7 @@ import json
 
 import requests
 from dateutil import parser
-from pytz import utc
+from pytz import utc  # Usamos pytz.utc directamente
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
 
@@ -102,7 +102,7 @@ class SaleOrder(models.Model):
             res_partner = self.check_customer(order.get('customer'), shopify_instance_id)
             if res_partner:
                 dt = parser.isoparse(order.get('created_at'))
-                # Convertir a UTC si es necesario:                
+                # Convertir a UTC si es necesario:
                 dt_utc = dt.astimezone(utc)
                 date_order_value = fields.Datetime.to_string(dt_utc)
                 
@@ -165,20 +165,32 @@ class SaleOrder(models.Model):
                         tax = self.env['account.tax'].sudo().create(dict_tax)
                     if tax_line.get('price') != '0.00':
                         tax_list.append(tax.id)
-            product = self.env['product.product'].search([('shopify_variant_id', '=', line.get('variant_id'))],
-                                                         limit=1)
+            # Migrado de shopify_variant_id a shopify_variant_map_ids
+            product = self.env['product.product'].sudo().search([
+                ('shopify_variant_map_ids.web_variant_id', '=', line.get('variant_id')),
+                ('shopify_variant_map_ids.shopify_instance_id', '=', shopify_instance_id.id)
+            ], limit=1)
             if not product:
                 generic_product = self.env.ref('ws_shopify_split_color.product_generic', raise_if_not_found=False)
                 if not generic_product:
                     raise UserError(_(f"No se ha definido el producto {line.get('title')} {line.get('product_id')} variante {line.get('variant_id')}."))
                 product = generic_product
                 product_name = "{} - {}".format(generic_product.name, line.get('title'))
+                # Crear un mapping para el producto genérico si no existe
+                if not generic_product.shopify_variant_map_ids.filtered(
+                    lambda m: m.shopify_instance_id == shopify_instance_id and m.web_variant_id == line.get('variant_id')
+                ):
+                    self.env['shopify.variant.map'].sudo().create({
+                        'odoo_id': generic_product.id,
+                        'web_variant_id': line.get('variant_id'),
+                        'shopify_instance_id': shopify_instance_id.id,
+                    })
             else:
                 product_name = line.get('title')
                 
             if product:
                 # Precio recibido de Shopify (incluye IVA)
-                price_incl = float(line.get('price'))-float(line.get('total_discount'))
+                price_incl = float(line.get('price')) - float(line.get('total_discount'))
 
                 # Calcular la tasa total de IVA a partir de tax_lines, o definir una tasa fija
                 tax_rate_total = 0.0
@@ -187,7 +199,7 @@ class SaleOrder(models.Model):
                         tax_rate_total += float(tax_line.get('rate'))
                 # En caso de que no exista información de impuestos, se puede asumir 0%
                 if tax_rate_total:
-                    price_excl = round(price_incl / (1 + tax_rate_total),2)
+                    price_excl = round(price_incl / (1 + tax_rate_total), 2)
                 else:
                     price_excl = price_incl
 
@@ -205,13 +217,13 @@ class SaleOrder(models.Model):
                 shopify_order_line_id = self.env['sale.order.line'].sudo().create(shopify_order_line_vals)
         
         for lineship in order.get('shipping_lines'):
-            price=round(float(lineship.get('price'))/1.21,2)
-            if price>0:
+            price = round(float(lineship.get('price')) / 1.21, 2)
+            if price > 0:
                 shipping = self.env['delivery.carrier'].sudo().search(
-                    [('name', '=', lineship.get('title')),('shopify_web_id', '=', shopify_instance_id.id)], limit=1)
+                    [('name', '=', lineship.get('title')), ('shopify_web_id', '=', shopify_instance_id.id)], limit=1)
                 if not shipping:
                     delivery_product = self.env['product.product'].sudo().create({
-                        'name': shopify_instance_id.name +'.'+ lineship.get('title'),
+                        'name': shopify_instance_id.name + '.' + lineship.get('title'),
                         'detailed_type': 'product',
                     })
                     vals = {
