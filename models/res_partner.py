@@ -128,7 +128,6 @@ class ResPartner(models.Model):
                     'email': email,
                     'phone': phone,
                     'ref': 'SID' + str(shopify_customer.get('id')),
-                    'is_shopify_customer': True,
                     'street': street,
                     'street2': street2,
                     'city': city,
@@ -202,7 +201,7 @@ class ResPartner(models.Model):
     def export_customers_to_shopify(self, shopify_instance_ids, update):
         partner_ids = self.sudo().browse(self._context.get("active_ids"))
         if not partner_ids:
-            domain = [('is_shopify_customer', '=', False), ('shopify_exported', '=', False)] if not update else []
+            domain = []
             for instance_id in shopify_instance_ids:
                 if instance_id.last_export_customer:
                     domain.append(('write_date', '>=', instance_id.last_export_customer))
@@ -255,7 +254,6 @@ class ResPartner(models.Model):
                 if response and response.ok:
                     shopify_customer = response.json().get('customer', {})
                     if shopify_customer:
-                        partner.is_shopify_customer = True
                         if mapping:
                             mapping.write({'shopify_partner_id': shopify_customer.get('id')})
                         else:
