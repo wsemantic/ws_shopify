@@ -269,8 +269,7 @@ class SaleOrder(models.Model):
         customer_vals = {
             'name': name,
             'email': email,
-            'phone': phone,
-            'is_shopify_customer': True,
+            'phone': phone
         }
         
         # Añadir tags si existen
