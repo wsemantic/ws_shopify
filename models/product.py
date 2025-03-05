@@ -2,7 +2,7 @@
 import base64
 import json
 
-import requests
+import requests, re
 from bs4 import BeautifulSoup
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
