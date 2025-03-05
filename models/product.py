@@ -396,7 +396,7 @@ class ProductTemplate(models.Model):
                 _logger.info("WSSH Starting product export SIN fecha for instance %s", instance_id.name)
                 domain = []
 
-            products_to_export = self.search(domain, order='create_date',limit=1)
+            products_to_export = self.search(domain, order='create_date')
             product_count = len(products_to_export)
             _logger.info("WSSH Found %d products to export for instance %s", product_count, instance_id.name)
         
@@ -430,8 +430,11 @@ class ProductTemplate(models.Model):
                     response = None
                     # Filtrar variantes para este color
                     variants = product.product_variant_ids.filtered(
-                        lambda v: template_attribute_value in v.product_template_attribute_value_ids and v.barcode
+                        lambda v: template_attribute_value in v.product_template_attribute_value_ids 
+                                  and v.barcode
+                                  and re.search(r'30811|30539|30561|30563', v.barcode)
                     )
+                    
                     if not variants:
                         _logger.info(f"WSSH No hay variantes con codigo {template_attribute_value.name}")
                         continue
