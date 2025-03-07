@@ -411,7 +411,7 @@ class ProductTemplate(models.Model):
             }
 
             processed_count = 0
-            max_processed = 10  # Limitar a 10 productos exportados por ejecución
+            max_processed = 5  # Limitar a 10 productos exportados por ejecución
         
             for product in products_to_export:                
                 if not instance_id.split_products_by_color:
@@ -425,6 +425,8 @@ class ProductTemplate(models.Model):
                     raise UserError(f"WSSH Producto sin color {product.name}, de momento solo soportado split por color")
                     self._export_single_product(product, instance_id, headers, update)
                     continue
+                # Variable para rastrear si se procesó al menos una variante del producto
+                product_processed = False                                                                                          
                
                 for template_attribute_value in color_line.product_template_value_ids:
                     _logger.info(f"WSSH Exporting product: {product.name} (ID:{product.id}) update {update} variante {template_attribute_value.name}")
@@ -488,7 +490,7 @@ class ProductTemplate(models.Model):
                             _logger.info(f"WSSH Updating Shopify product {product_map.web_product_id}")
                             if response.ok:
                                 # Actualizar las variantes individualmente
-                                processed_count += 1
+                                product_processed = True
                         else:
                             _logger.info(f"WSSH Ignorar, por no update, Shopify product {product_map.web_product_id}")                                                            
                     else:                        
@@ -498,7 +500,7 @@ class ProductTemplate(models.Model):
                         _logger.info("WSSHCreating new Shopify product")
 
                         if response.ok:
-                            processed_count += 1
+                            product_processed = True
                             shopify_product = response.json().get('product', {})
                             if shopify_product:
                                 # Guardar el ID del producto y actualizar los IDs de las variantes
@@ -517,6 +519,10 @@ class ProductTemplate(models.Model):
                         _logger.error(f"WSSH Error exporting product: {response.text}")
                         raise UserError(f"WSSH Error exporting product {product.name} - {template_attribute_value.name}: {response.text}")
 
+                # Incrementar el contador solo si el producto tuvo al menos una variante procesada
+                if product_processed:
+                    processed_count += 1
+                    
                 if processed_count >= max_processed:
                     _logger.info("WSSH Processed %d products for instance %s. Stopping export for this run.", processed_count, instance_id.name)
                     # Actualizar la fecha al write_date del último producto procesado menos 1 segundo
