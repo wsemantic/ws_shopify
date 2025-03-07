@@ -318,7 +318,7 @@ class SaleOrder(models.Model):
             # Configurar parámetros para la consulta a Shopify
             params = {
                 "limit": 250,  # Ajusta el tamaño de página según sea necesario
-                "page_info": None,
+                "pageInfo": None,
                 "status": "any"
             }
             if effective_from_date:

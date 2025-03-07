@@ -388,14 +388,15 @@ class ProductTemplate(models.Model):
                 color_attribute = attr
                 break
 
-        for instance_id in shopify_instance_ids:                                                                             
+        for instance_id in shopify_instance_ids:        
+            export_update_time = fields.Datetime.now()            
             # Siempre filtramos por productos publicados
             domain = [('is_published', '=', True)]
             if instance_id.last_export_product:
                 _logger.info(f"WSSH Starting product export por fecha {instance_id.last_export_product} instance {instance_id.name} atcolor {color_attribute}") 
                 domain.append(('write_date', '>', instance_id.last_export_product))
 
-            products_to_export = self.search(domain, order='create_date')
+            products_to_export = self.search(domain, order='write_date')
             product_count = len(products_to_export)
             _logger.info("WSSH Found %d products to export for instance %s", product_count, instance_id.name)
         
@@ -517,10 +518,12 @@ class ProductTemplate(models.Model):
 
                 if processed_count >= max_processed:
                     _logger.info("WSSH Processed %d products for instance %s. Stopping export for this run.", processed_count, instance_id.name)
-                    break
+                    # Actualizar la fecha al write_date del último producto procesado menos 1 segundo
+                    export_update_time = product.write_date - datetime.timedelta(seconds=1)
+                    break                                                                                                      
                 
             # Actualizar la fecha de la última exportación
-            instance_id.last_export_product = fields.Datetime.now()
+            instance_id.last_export_product = export_update_time
             
     def _update_shopify_variant(self, variant, instance_id, headers):
         if not variant.barcode:
