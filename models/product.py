@@ -389,12 +389,11 @@ class ProductTemplate(models.Model):
                 break
 
         for instance_id in shopify_instance_ids:                                                                             
+            # Siempre filtramos por productos publicados
+            domain = [('is_published', '=', True)]
             if instance_id.last_export_product:
                 _logger.info(f"WSSH Starting product export por fecha {instance_id.last_export_product} instance {instance_id.name} atcolor {color_attribute}") 
-                domain = [('write_date', '>', instance_id.last_export_product)]
-            else:
-                _logger.info("WSSH Starting product export SIN fecha for instance %s", instance_id.name)
-                domain = []
+                domain.append(('write_date', '>', instance_id.last_export_product))
 
             products_to_export = self.search(domain, order='create_date')
             product_count = len(products_to_export)
