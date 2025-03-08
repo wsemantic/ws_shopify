@@ -128,6 +128,7 @@ class SaleOrder(models.Model):
                 self.create_shopify_order_line(sale_order_rec, order, skip_existing_order, shopify_instance_id)
 
                 return sale_order_rec
+                
     def create_shopify_order_line(self, shopify_order_id, order, skip_existing_order, shopify_instance_id):
         # Crea líneas de orden de venta en Odoo basadas en las líneas de Shopify
         # Calcular el porcentaje total de descuento usando total_discounts antes de procesar las líneas
@@ -162,12 +163,30 @@ class SaleOrder(models.Model):
                 ('shopify_variant_map_ids.shopify_instance_id', '=', shopify_instance_id.id)
             ], limit=1)
             if not product:
-                generic_product = self.env.ref('ws_shopify_split_color.product_generic', raise_if_not_found=False)
-                if not generic_product:
-                    raise UserError(_(f"No se ha definido el producto {line.get('title')} {line.get('product_id')} variante {line.get('variant_id')}."))
-                product = generic_product
-                product_name = "{} - {}".format(generic_product.name, line.get('title'))
-                # No creamos mapping para el producto genérico, ya que es único en Odoo
+                # Intentar buscar por SKU (default_code) antes de usar el genérico
+                sku = line.get('sku')
+                if sku:
+                    product_by_sku = self.env['product.product'].sudo().search([
+                        ('default_code', '=', sku)
+                    ], limit=1)
+                    if product_by_sku:
+                        # Verificar si existe un mapeo para este producto en la instancia actual
+                        product_map = product_by_sku.shopify_variant_map_ids.filtered(
+                            lambda m: m.shopify_instance_id == shopify_instance_id and m.web_variant_id == line.get('variant_id')
+                        )
+                        if product_map:
+                            product = product_by_sku
+                            product_name = line.get('title')
+                        else:
+                            # Si no hay mapeo, seguir con el genérico pero loguear la situación
+                            _logger.info(f"WSSH Producto encontrado por SKU {sku} pero sin mapeo para variant_id {line.get('variant_id')} en instancia {shopify_instance_id.name}")
+                if not product:  # Si no se encontró por SKU o no había SKU                            
+                    generic_product = self.env.ref('ws_shopify_split_color.product_generic', raise_if_not_found=False)
+                    if not generic_product:
+                        raise UserError(_(f"No se ha definido el producto {line.get('title')} {line.get('product_id')} variante {line.get('variant_id')}."))
+                    product = generic_product
+                    product_name = "{} - {}".format(generic_product.name, line.get('title'))
+                    # No creamos mapping para el producto genérico, ya que es único en Odoo
             else:
                 product_name = line.get('title')
                 
