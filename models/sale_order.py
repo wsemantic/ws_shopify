@@ -176,7 +176,7 @@ class SaleOrder(models.Model):
                         )
                         if product_map:
                             product = product_by_sku
-                            product_name = line.get('title')
+                            product_name = line.get('title')+' '+sku
                         else:
                             # Si no hay mapeo, seguir con el genérico pero loguear la situación
                             _logger.info(f"WSSH Producto encontrado por SKU {sku} pero sin mapeo para variant_id {line.get('variant_id')} en instancia {shopify_instance_id.name}")
