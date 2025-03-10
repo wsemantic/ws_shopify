@@ -113,12 +113,14 @@ class ProductTemplate(models.Model):
               ('shopify_product_map_ids.web_product_id', '=', shopify_product_id),
               ('shopify_product_map_ids.shopify_instance_id', '=', shopify_instance_id.id),
           ], limit=1)
-        
+          
+          '''        
           if existing_attribute_value:
               # Si el producto ya existe, no hacer nada
               _logger.info(f"WSSH Product with Shopify ID {shopify_product_id} already exists in Odoo for instance {shopify_instance_id.name}.")
               product_list.append(existing_attribute_value.product_tmpl_id.id)
               continue
+          '''
           
           # Si no existe, buscar por las variantes (shopify_variant_id o default_code)
           for variant in shopify_product.get('variants', []):
