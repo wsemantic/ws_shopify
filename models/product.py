@@ -128,8 +128,10 @@ class ProductTemplate(models.Model):
               # Buscar por shopify_variant_id o default_code (SKU)
               existing_variant = self.env['product.product'].sudo().search([
                   '|',
+                  '|',
                   ('shopify_variant_map_ids.web_variant_id', '=', shopify_variant_id),
                   ('default_code', '=', sku),
+                  ('barcode', '=', variant.get('barcode')),
               ], limit=1)
               
               if existing_variant:
