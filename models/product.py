@@ -128,8 +128,8 @@ class ProductTemplate(models.Model):
               # Buscar por shopify_variant_id o default_code (SKU)
               existing_variant = self.env['product.product'].sudo().search([
                   '|',
-                  '|',
                   ('shopify_variant_map_ids.web_variant_id', '=', shopify_variant_id),
+                  '|',
                   ('default_code', '=', sku),
                   ('barcode', '=', variant.get('barcode')),
               ], limit=1)
@@ -631,8 +631,16 @@ class ProductTemplate(models.Model):
             matched_shopi_variant = None
             # Buscar coincidencia en shopify_variants usando SKU o barcode
             for shopify_variant in shopify_variants:
-                if shopify_variant.get('sku') in (odoo_variant.default_code, odoo_variant.barcode):
+                # Versión más detallada
+                shopify_sku = shopify_variant.get('sku')
+                shopify_barcode = shopify_variant.get('barcode')
+                odoo_sku = odoo_variant.default_code
+                odoo_barcode = odoo_variant.barcode
+                
+                if shopify_sku     and (shopify_sku == odoo_sku)         or \
+                   shopify_barcode and (shopify_barcode == odoo_barcode):
                     matched_shopi_variant = shopify_variant
+                    _logger.info(f"WSSH Match encontrado: Shopify SKU/Barcode: {shopify_sku}/{shopify_barcode} coincide con Odoo SKU/Barcode: {odoo_sku}/{odoo_barcode}")
                     break
     
             if matched_shopi_variant:
@@ -681,7 +689,7 @@ class ProductTemplate(models.Model):
                     _logger.warning("No shopify.location found for instance %s", instance_id.name)
             else:
                 sku = odoo_variant.default_code or 'N/A'
-                _logger.warning("No matching Shopify variant found for Odoo variant with SKU %s", sku)   
+                _logger.warning(f"WSSH Update var: No matching Shopify variant found for Odoo variant with SKU %s", sku)   
                      
                 
     def _prepare_shopify_variant_data(self, variant, instance_id, template_attribute_value=None, is_color_split=False, is_update=False):
