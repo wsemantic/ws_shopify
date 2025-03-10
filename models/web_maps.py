@@ -33,13 +33,14 @@ class ShopifyStockMapping(models.Model):
     _description = 'Mapping de stock entre la web y Odoo'
 
     web_stock_id = fields.Char(string="ID de stock en la web", required=True)
-    odoo_id = fields.Many2one('stock.quant', string="Quant en Odoo", required=True)
-    shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance')
+    odoo_id = fields.Many2one('product.product', string="Variante en Odoo", required=True)  # Cambiado de stock.quant a product.product
+    shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance', required=True)
+    shopify_location_id = fields.Many2one('shopify.location', string='Shopify Location', required=True)  # Nueva referencia a ubicación
     
     _sql_constraints = [
         ('stock_id_shopify_instance_unique', 
-         'UNIQUE(odoo_id, shopify_instance_id)', 
-         'La combinación de Quant en Odoo y Shopify Instance debe ser única.')
+         'UNIQUE(odoo_id, shopify_location_id)', 
+         'La combinación de Quant en Odoo y Shopify Location debe ser única.')
     ]    
     
 class ShopifyPartnerMap(models.Model):

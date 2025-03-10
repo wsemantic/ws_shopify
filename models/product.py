@@ -31,6 +31,13 @@ class ProductProduct(models.Model):
     is_shopify_variant = fields.Boolean('Is Shopify Variant', default=False)
     shopify_barcode = fields.Char('Shopify Barcode')
     shopify_sku = fields.Char('Shopify SKU')
+    # Propiedad calculada para el mapeo de stock
+    shopify_stock_map_ids = fields.One2many(
+        'shopify.stock.map', 
+        'odoo_id',   
+        string="Shopify Stock Mappings Computed",
+        help='Mapeos entre el item inventory de Shopify y la variante en Odoo'
+    )
 
     shopify_variant_map_ids = fields.One2many(
         "shopify.variant.map",
@@ -38,6 +45,7 @@ class ProductProduct(models.Model):
         string="Shopify Variant Mappings",
         help="Mappings to Shopify variants across multiple websites"
     )
+
 
 
 class ProductTemplate(models.Model):
@@ -351,24 +359,24 @@ class ProductTemplate(models.Model):
 
 
 
-                        # if level.get('available') != None:
-                        #     res_product_qty = self.env['stock.change.product.qty'].sudo().search(
-                        #         [('product_id', '=', product.id)], limit=1)
+                                                            
+                                                                                                   
+                                                                             
 
-                        # dict_q = {}
-                        # dict_q['new_quantity'] = level.get('available')
-                        # dict_q['product_id'] = product.id
-                        # dict_q['product_tmpl_id'] = product.product_tmpl_id.id
-                        #
-                        # if not res_product_qty:
-                        #     create_qty = self.env['stock.change.product.qty'].sudo().create(dict_q)
-                        #     create_qty.change_product_qty()
-                        # else:
-                        #     write_qty = res_product_qty.sudo().write(dict_q)
-                        #     qty_id = self.env['stock.change.product.qty'].sudo().search(
-                        #         [('product_id', '=', product.id)], limit=1)
-                        #     if qty_id:
-                        #         qty_id.change_product_qty()
+                                     
+                                                                         
+                                                           
+                                                                                
+                         
+                                                 
+                                                                                                     
+                                                             
+                               
+                                                                              
+                                                                                          
+                                                                             
+                                        
+                                                             
 
 
                         product_list.append(product.id)
@@ -623,7 +631,7 @@ class ProductTemplate(models.Model):
     def _update_variant_ids(self, odoo_variants, shopify_variants, instance_id):
         """
         Actualiza los IDs de las variantes de Shopify en las variantes de Odoo, 
-        y actualiza los mappings de stock basados en el stock.quant correspondiente.
+        y actualiza los mappings de stock basados en la variante y la ubicación en lugar de stock.quant.
         """
         shopify_location = self.env['shopify.location'].sudo().search([
             ('shopify_instance_id', '=', instance_id.id)
@@ -662,31 +670,28 @@ class ProductTemplate(models.Model):
                     })
                     _logger.info("Created variant map for Odoo variant (SKU: %s)", odoo_variant.default_code)
     
-                # Actualizar el mapeo de stock en stock.quant
+                # Actualizar o crear el mapeo de stock basado en la variante y la ubicación
                 if shopify_location:
-                    domain = [('product_id', '=', odoo_variant.id)]
-                    if shopify_location.import_stock_warehouse_id:
-                        domain.append(('location_id', '=', shopify_location.import_stock_warehouse_id.id))
+                    stock_map = self.env['shopify.stock.map'].sudo().search([
+                        ('odoo_id', '=', odoo_variant.id),
+                        ('shopify_instance_id', '=', instance_id.id),
+                        ('shopify_location_id', '=', shopify_location.id)
                     
-                    stock_quant = self.env['stock.quant'].sudo().search(domain, limit=1)
-                    if stock_quant:
-                        stock_map = stock_quant.shopify_stock_map_ids.filtered(
-                            lambda m: m.shopify_instance_id == instance_id
-                        )
-                        if stock_map:
-                            if stock_map.web_stock_id != matched_shopi_variant.get('inventory_item_id'):
-                                stock_map.write({'web_stock_id': matched_shopi_variant.get('inventory_item_id')})
-                                _logger.info("Updated stock map for Odoo variant (SKU: %s)", odoo_variant.default_code)
-                        else:
-                            self.env['shopify.stock.map'].create({
-                                'web_stock_id': matched_shopi_variant.get('inventory_item_id'),
-                                'odoo_id': stock_quant.id,
-                                'shopify_instance_id': instance_id.id,
-                            })
-                            _logger.info("Created stock map for Odoo variant (SKU: %s)", odoo_variant.default_code)
+                    ], limit=1)
+                                   
+                    if stock_map:                                                                                                                                        
+                        if stock_map.web_stock_id != matched_shopi_variant.get('inventory_item_id'):
+                            stock_map.write({'web_stock_id': matched_shopi_variant.get('inventory_item_id')})
+                            _logger.info("Updated stock map for Odoo variant (SKU: %s)", odoo_variant.default_code)                                                                                  
                     else:
-                        _logger.warning("No stock.quant found for Odoo variant (SKU: %s) in location %s",
-                                        odoo_variant.default_code, shopify_location.name)
+                        self.env['shopify.stock.map'].create({
+                            'web_stock_id': matched_shopi_variant.get('inventory_item_id'),
+                            'odoo_id': odoo_variant.id,
+                            'shopify_instance_id': instance_id.id,
+                            'shopify_location_id': shopify_location.id,
+                        })
+                        _logger.info("Created stock map for Odoo variant (SKU: %s)", odoo_variant.default_code)
+                                                                                         
                 else:
                     _logger.warning("No shopify.location found for instance %s", instance_id.name)
             else:
@@ -735,30 +740,38 @@ class ProductTemplate(models.Model):
             _logger.warning("No shopify.location found for instance %s", shopify_instance.name)
             return updated_ids
     
+        # Usar shopify_stock_map_ids_computed en lugar de stock.quant
         domain = [
             ('shopify_stock_map_ids.shopify_instance_id', '=', shopify_instance.id),
-            ('shopify_stock_map_ids.web_stock_id', '!=', False)
+            ('shopify_stock_map_ids.web_stock_id', '!=', False),
+            ('shopify_stock_map_ids.shopify_location_id', '=', location.id)
         ]
-        if location and location.import_stock_warehouse_id:
-            domain.append(('location_id', '=', location.import_stock_warehouse_id.id))
+        
+                                                                                      
             
         if shopify_instance.last_export_stock:
             domain.append(('write_date', '>', shopify_instance.last_export_stock))
         
-        stock_quants = self.env['stock.quant'].sudo().search(domain, order="write_date asc")
-        _logger.info(f"WSSH Found {len(stock_quants)} quants desde {shopify_instance.last_export_stock}")
+        variants = self.env['product.product'].sudo().search(domain, order="write_date asc")
+        _logger.info(f"WSSH Found {len(variants)} variants desde {shopify_instance.last_export_stock}")
         
         product_data = {}
-        for quant in stock_quants:
-            product = quant.product_id
-            stock_map = quant.shopify_stock_map_ids.filtered(lambda m: m.shopify_instance_id == shopify_instance)
+        for variant in variants:
+                                      
+            stock_map = variant.shopify_stock_map_ids.filtered(lambda m: m.shopify_instance_id == shopify_instance)
             if not stock_map or not stock_map.web_stock_id:
                 continue
-            if product not in product_data:
-                product_data[product] = {'quantity': 0, 'write_date': quant.write_date, 'inventory_item_id': stock_map.web_stock_id}
-            product_data[product]['quantity'] += quant.quantity
-            if quant.write_date > product_data[product]['write_date']:
-                product_data[product]['write_date'] = quant.write_date
+            # Calcular la cantidad disponible basada en stock.quant
+            quant = self.env['stock.quant'].sudo().search([
+                ('product_id', '=', variant.id),
+                ('location_id', '=', location.import_stock_warehouse_id.id if location.import_stock_warehouse_id else False)
+            ], limit=1)
+            quantity = quant.quantity if quant else 0
+            if variant not in product_data:
+                product_data[variant] = {'quantity': 0, 'write_date': variant.write_date, 'inventory_item_id': stock_map.web_stock_id}
+            product_data[variant]['quantity'] += quantity
+            if variant.write_date > product_data[variant]['write_date']:
+                product_data[variant]['write_date'] = variant.write_date
         
         sorted_products = sorted(product_data.items(), key=lambda x: x[1]['write_date'])
         
@@ -798,7 +811,7 @@ class ProductTemplate(models.Model):
                                 product.product_tmpl_id.name, product.name, response.text)
             
             if time.time() - iteration_start_time > iteration_timeout:
-                adjusted_write_date = current_write_date - timedelta(seconds=1)
+                adjusted_write_date = current_write_date - datetime.timedelta(seconds=1)
                 _logger.error("WSSH Timeout de iteración alcanzado para el producto %s. Actualizando last_export_stock con write_date %s",
                               product.default_code, adjusted_write_date)
                 shopify_instance.last_export_stock = adjusted_write_date
