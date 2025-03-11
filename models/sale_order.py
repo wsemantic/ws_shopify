@@ -172,7 +172,7 @@ class SaleOrder(models.Model):
                     if product_by_sku:
                         # Verificar si existe un mapeo para este producto en la instancia actual
                         product_map = product_by_sku.shopify_variant_map_ids.filtered(
-                            lambda m: m.shopify_instance_id == shopify_instance_id and m.web_variant_id == line.get('variant_id')
+                            lambda m: m.shopify_instance_id == shopify_instance_id 
                         )
                         if product_map:
                             product = product_by_sku

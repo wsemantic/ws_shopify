@@ -33,7 +33,7 @@ class ShopifyStockMapping(models.Model):
     _description = 'Mapping de stock entre la web y Odoo'
 
     web_stock_id = fields.Char(string="ID de stock en la web", required=True)
-    odoo_id = fields.Many2one('product.product', string="Variante en Odoo", required=True)  # Cambiado de stock.quant a product.product
+    odoo_id = fields.Many2one('product.product', string="Variante en Odoo", required=True)  # Cambiado de stock.quant a product.product porque el quant no existe hasta que hay moviemientos, mientras que el inventory existe desde que existe la variante
     shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance', required=True)
     shopify_location_id = fields.Many2one('shopify.location', string='Shopify Location', required=True)  # Nueva referencia a ubicación
     
