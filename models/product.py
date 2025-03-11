@@ -356,29 +356,6 @@ class ProductTemplate(models.Model):
                         }
                         stock_inventory_array.update(stock_inventory_line)
                         product_ids_list.append(product)
-
-
-
-                                                            
-                                                                                                   
-                                                                             
-
-                                     
-                                                                         
-                                                           
-                                                                                
-                         
-                                                 
-                                                                                                     
-                                                             
-                               
-                                                                              
-                                                                                          
-                                                                             
-                                        
-                                                             
-
-
                         product_list.append(product.id)
         inventory_name = 'Inventory For Instance "%s"' % (shopify_instance_id.name)
         inventories = stock_inventory_obj.create_inventory_adjustment_ept(stock_inventory_array,
@@ -472,9 +449,7 @@ class ProductTemplate(models.Model):
                         continue
 
                     product_data = {
-                        "product": {
-                            "title": f"{product.name} - {template_attribute_value.name}",
-                            "body_html": product.description or "",
+                        "product": {                            
                             "options": [
                                 {
                                     "name": "Color",
@@ -506,7 +481,11 @@ class ProductTemplate(models.Model):
                         else:
                             _logger.info(f"WSSH Ignorar, por no update, Shopify product {product_map.web_product_id}")                                                            
                     else:                        
+                        product_data["product"]["title"]=f"{product.name} - {template_attribute_value.name}"
                         product_data["product"]["status"]='draft'
+                        if product.description:
+                            product_data["product"]["body_html"]=product.description
+
                         url = self.get_products_url(instance_id, 'products.json')
                         response = requests.post(url, headers=headers, data=json.dumps(product_data))
                         _logger.info("WSSHCreating new Shopify product")
