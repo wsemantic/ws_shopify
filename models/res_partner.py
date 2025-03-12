@@ -75,16 +75,14 @@ class ResPartner(models.Model):
     def prepare_customer_vals(self, shopify_customer, shopify_instance_id):
         """Prepara los valores para crear o actualizar un cliente."""
                                                   
-        addresses = shopify_customer.get('addresses', [])
+        addresses = shopify_customer.get('default_address', [])
         first_address = addresses[0] if addresses else {}
-
                                                                              
         first_name = shopify_customer.get('first_name') or first_address.get('first_name') or ''
         last_name = shopify_customer.get('last_name') or first_address.get('last_name') or ''
         email = shopify_customer.get('email') or first_address.get('email') or ''
         phone = shopify_customer.get('phone') or first_address.get('phone') or ''
-        name = self._get_customer_name(first_name, last_name, email)
-                                                                           
+        name = self._get_customer_name(first_name, last_name, email)                                                                        
 
         street = first_address.get('address1')
         street2 = first_address.get('address2')
@@ -115,15 +113,6 @@ class ResPartner(models.Model):
                 _logger.info(f"WSSH Partner existente encontrado {partner.name} id {shopify_customer.get('id')} skip {skip_existing_customer}")
                 if not skip_existing_customer:
                     vals_update = self.prepare_customer_vals(shopify_customer, shopify_instance_id)
-                                                       
-                                                          
-                                                          
-                                                             
-                                                                
-                                                       
-                                                    
-                                                                         
-
                     partner.with_context(no_vat_validation=True).write(vals_update)
                     mapping = partner.shopify_partner_map_ids.filtered(lambda m: m.shopify_instance_id == shopify_instance_id)
                     if mapping:
@@ -136,18 +125,7 @@ class ResPartner(models.Model):
                         })
             else:
                 _logger.info(f"WSSH Partner NO encontrado id {shopify_customer.get('id')}")
-                vals = self.prepare_customer_vals(shopify_customer, shopify_instance_id)
-                                 
-                                       
-                                   
-                                   
-                                                                   
-                                     
-                                       
-                                 
-                               
-                                             
-                 
+                vals = self.prepare_customer_vals(shopify_customer, shopify_instance_id)  
                 partner = super(ResPartner, self).with_context(no_vat_validation=True).create(vals)
                 self.env['shopify.partner.map'].create({
                     'partner_id': partner.id,
@@ -166,7 +144,7 @@ class ResPartner(models.Model):
 
     def _find_existing_partner(self, shopify_customer, shopify_instance_id):
         shopify_customer_id = shopify_customer.get('id')
-        addresses = shopify_customer.get('addresses', [])
+        addresses = shopify_customer.get('default_address', [])
         first_address = addresses[0] if addresses else {}
 
         email = shopify_customer.get('email') or first_address.get('email')
