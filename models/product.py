@@ -1,6 +1,7 @@
 # inherit class product.template and add fields for shopify instance and shopify product id
 import base64
 import datetime
+import time
 import json
 
 import requests, re
