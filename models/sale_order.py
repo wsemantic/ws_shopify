@@ -89,13 +89,8 @@ class SaleOrder(models.Model):
 
     def prepare_shopify_order_vals(self, shopify_instance_id, order, skip_existing_order):
         # Prepara los valores para crear una orden de venta en Odoo
-        # call a method to check the customer is available or not
-        # if not available create a customer
-        # if available get the customer id
-        # create a sale order
-        # create a sale order line
         if order.get('customer'):
-            res_partner = self.check_customer(order.get('customer'), shopify_instance_id)
+            res_partner = self.env['res.partner'].get_or_create_partner_from_shopify(order.get('customer'), shopify_instance_id)
             if res_partner:
                 dt = parser.isoparse(order.get('created_at'))
                 # Convertir a UTC si es necesario:
@@ -246,75 +241,8 @@ class SaleOrder(models.Model):
         return shop_url
 
     def check_customer(self, customer, shopify_instance_id):
-        # check customer is available or not
-        # if not available create a customer and pass it
-        # if available write and pass the customer
-        default_address = customer.get('default_address', {})
-
-        # Priorizar campos directos del cliente, con fallback a default_address
-        first_name = customer.get('first_name') or default_address.get('first_name') or ''
-        last_name = customer.get('last_name') or default_address.get('last_name') or ''
-        email = customer.get('email') or default_address.get('email') or ''
-        phone = customer.get('phone') or default_address.get('phone') or ''
-        
-        # Construir el nombre del cliente
-        name = (first_name + ' ' + last_name).strip() or email or _("Shopify Customer")
-        _logger.info(f"WSSH nombre construido para cliente: {name}")
-
-        # Buscar primero por shopify_partner_id para asegurar que se use si existe
-        partner_obj = self.env['res.partner'].sudo().search([
-            ('shopify_partner_map_ids.shopify_partner_id', '=', customer.get('id')),
-            ('shopify_partner_map_ids.shopify_instance_id', '=', shopify_instance_id.id)
-        ], limit=1)
-        
-        # Si no se encuentra por ID, buscar por email
-        if not partner_obj:
-            partner_obj = self.env['res.partner'].sudo().search([
-                ('email', '=', email)
-            ], limit=1)
-
-        # Preparar valores del cliente
-        customer_vals = {
-            'name': name,
-            'email': email,
-            'phone': phone
-        }
-        
-        # Añadir tags si existen
-        tags = customer.get('tags')
-        tag_list = []
-        if tags:
-            tags = tags.split(',')
-            for tag in tags:
-                tag_id = self.env['res.partner.category'].sudo().search([('name', '=', tag)], limit=1)
-                if not tag_id:
-                    tag_id = self.env['res.partner.category'].sudo().create({'name': tag})
-                tag_list.append(tag_id.id)
-            customer_vals['category_id'] = [(6, 0, tag_list)]
-
-        # Si no se encontró un partner, crearlo
-        if not partner_obj:
-            _logger.info(f"WSSH Creando nuevo cliente: {name}")
-            partner_obj = self.env['res.partner'].sudo().create(customer_vals)
-            self.env['shopify.partner.map'].sudo().create({
-                'partner_id': partner_obj.id,
-                'shopify_partner_id': customer.get('id'),
-                'shopify_instance_id': shopify_instance_id.id,
-            })
-        else:
-            _logger.info(f"WSSH Cliente existente encontrado: {partner_obj.name}")
-            # No actualizamos el partner aquí, solo aseguramos el mapping
-            mapping = partner_obj.shopify_partner_map_ids.filtered(
-                lambda m: m.shopify_instance_id == shopify_instance_id
-            )
-            if not mapping:
-                self.env['shopify.partner.map'].sudo().create({
-                    'partner_id': partner_obj.id,
-                    'shopify_partner_id': customer.get('id'),
-                    'shopify_instance_id': shopify_instance_id.id,
-                })
-
-        return partner_obj
+        # Este método ya no es necesario, se elimina y se usa get_or_create_partner_from_shopify directamente
+        pass
 
     def import_shopify_orders(self, shopify_instance_ids, skip_existing_order, from_date, to_date):
         # Importa órdenes completas desde Shopify a Odoo
