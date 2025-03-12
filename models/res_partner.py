@@ -75,8 +75,8 @@ class ResPartner(models.Model):
     def prepare_customer_vals(self, shopify_customer, shopify_instance_id):
         """Prepara los valores para crear o actualizar un cliente."""
                                                   
-        addresses = shopify_customer.get('default_address', [])
-        first_address = addresses[0] if addresses else {}
+        addresses = shopify_customer.get('default_address', {})
+        first_address = addresses
                                                                              
         first_name = shopify_customer.get('first_name') or first_address.get('first_name') or ''
         last_name = shopify_customer.get('last_name') or first_address.get('last_name') or ''
@@ -144,8 +144,8 @@ class ResPartner(models.Model):
 
     def _find_existing_partner(self, shopify_customer, shopify_instance_id):
         shopify_customer_id = shopify_customer.get('id')
-        addresses = shopify_customer.get('default_address', [])
-        first_address = addresses[0] if addresses else {}
+        addresses = shopify_customer.get('default_address', {})
+        first_address = addresses 
 
         email = shopify_customer.get('email') or first_address.get('email')
         phone = shopify_customer.get('phone') or first_address.get('phone')
