@@ -738,7 +738,7 @@ class ProductTemplate(models.Model):
         
         # Control de tiempo
         last_query_time = time.time()
-        iteration_timeout = 500
+        iteration_timeout = 250
         iteration_start_time = time.time()
         
         for variant in variants:
