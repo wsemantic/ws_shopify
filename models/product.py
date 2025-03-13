@@ -725,10 +725,7 @@ class ProductTemplate(models.Model):
             ('shopify_stock_map_ids.shopify_instance_id', '=', shopify_instance.id),
             ('shopify_stock_map_ids.web_stock_id', '!=', False),
             ('shopify_stock_map_ids.shopify_location_id', '=', location.id),
-            '|',
-            ('write_date', '>', shopify_instance.last_export_stock or '1900-01-01 00:00:00'),
-            '&',
-            ('write_date', '=', shopify_instance.last_export_stock),#si hay miles con misma fecha, habra time out y seguira por misma fecha que last
+            ('write_date', '>=', shopify_instance.last_export_stock or '1900-01-01 00:00:00'),#si hay miles con misma fecha, habra time out y seguira por misma fecha que last
             ('id', '>', shopify_instance.last_export_stock_id or 0)
         ]
         
@@ -778,7 +775,6 @@ class ProductTemplate(models.Model):
                 updated_ids.append(variant.id)
                 # Actualizar shopify_instance tras cada éxito
                 shopify_instance.write({
-                    'last_export_stock': variant.write_date,
                     'last_export_stock_id': variant.id
                 })
             else:
