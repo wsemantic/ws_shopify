@@ -744,10 +744,12 @@ class ProductTemplate(models.Model):
                 continue
             
             # Obtener cantidad disponible desde stock.quant
-            quant = self.env['stock.quant'].sudo().search([
-                ('product_id', '=', variant.id),
-                ('location_id', '=', location.import_stock_warehouse_id.id if location.import_stock_warehouse_id else False)
-            ], limit=1)
+            # Obtener cantidad disponible desde stock.quant, sin filtrar por location si no hay import_stock_warehouse_id
+            domain = [('product_id', '=', variant.id)]
+            if location.import_stock_warehouse_id:
+                domain.append(('location_id', '=', location.import_stock_warehouse_id.id))
+
+            quant = self.env['stock.quant'].sudo().search(domain, limit=1)
             available_qty = quant.quantity if quant else 0
             
             # Control de tiempo entre peticiones
