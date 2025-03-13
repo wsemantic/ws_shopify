@@ -729,8 +729,19 @@ class ProductTemplate(models.Model):
             ('id', '>', shopify_instance.last_export_stock_id or 0)
         ]
         
-        # Buscar variantes ordenadas
-        variants = self.env['product.product'].sudo().search(domain, order="write_date asc, id asc")
+        # Determinar el orden según si venimos de un timeout o no
+        if shopify_instance.last_export_stock_id > 0:
+            # Si venimos de un timeout, ordenar solo por ID para continuar donde lo dejamos
+            order = "id asc"
+            _logger.info(f"WSSH Continuando desde ID {shopify_instance.last_export_stock_id} (timeout previo)")
+        else:
+            # Si es un proceso nuevo, ordenar por fecha y luego ID
+            order = "write_date asc, id asc"
+            _logger.info(f"WSSH Iniciando nuevo proceso desde fecha {shopify_instance.last_export_stock}")
+        
+        # Buscar variantes con el orden apropiado
+        variants = self.env['product.product'].sudo().search(domain, order=order)     
+        
         _logger.info(f"WSSH Found {len(variants)} variants desde {shopify_instance.last_export_stock}")
         
         # Control de tiempo
