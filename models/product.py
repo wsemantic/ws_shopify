@@ -719,15 +719,14 @@ class ProductTemplate(models.Model):
         if not location:
             _logger.warning("No shopify.location found for instance %s", shopify_instance.name)
             return updated_ids
-    
-        # Dominio con OR para filtrar variantes
-        domain = [
-            ('shopify_stock_map_ids.shopify_instance_id', '=', shopify_instance.id),
-            ('shopify_stock_map_ids.web_stock_id', '!=', False),
-            ('shopify_stock_map_ids.shopify_location_id', '=', location.id),
-            ('write_date', '>=', shopify_instance.last_export_stock or '1900-01-01 00:00:00'),#si hay miles con misma fecha, habra time out y seguira por misma fecha que last
+        
+        # Dominio para stock.quant
+        quant_domain = [
+            ('write_date', '>=', shopify_instance.last_export_stock or '1900-01-01 00:00:00'),
             ('id', '>', shopify_instance.last_export_stock_id or 0)
         ]
+        if location.import_stock_warehouse_id:
+            quant_domain.append(('location_id', '=', location.import_stock_warehouse_id.id))
         
         # Determinar el orden según si venimos de un timeout o no
         if shopify_instance.last_export_stock_id > 0:
@@ -739,8 +738,15 @@ class ProductTemplate(models.Model):
             order = "write_date asc, id asc"
             _logger.info(f"WSSH Iniciando nuevo proceso desde fecha {shopify_instance.last_export_stock}")
         
-        # Buscar variantes con el orden apropiado
-        variants = self.env['product.product'].sudo().search(domain, order=order)     
+        # Buscar stock.quants con el orden apropiado
+        quants = self.env['stock.quant'].sudo().search(quant_domain, order=order)
+        # Obtener variantes únicas de los quants        
+        variants = self.sudo().browse(quants.mapped('product_id').ids)
+        # Filtrar variantes con shopify_stock_map_ids válidos
+        variants = variants.filtered(lambda v: any(
+            m.shopify_instance_id == shopify_instance and m.web_stock_id and m.shopify_location_id == location
+            for m in v.shopify_stock_map_ids
+        ))
         
         _logger.info(f"WSSH Found {len(variants)} variants desde {shopify_instance.last_export_stock}")
         
@@ -755,11 +761,9 @@ class ProductTemplate(models.Model):
                 continue
             
             # Obtener cantidad disponible desde stock.quant
-            # Obtener cantidad disponible desde stock.quant, sin filtrar por location si no hay import_stock_warehouse_id
             domain = [('product_id', '=', variant.id)]
             if location.import_stock_warehouse_id:
                 domain.append(('location_id', '=', location.import_stock_warehouse_id.id))
-
             quant = self.env['stock.quant'].sudo().search(domain, limit=1)
             available_qty = quant.quantity if quant else 0
             
@@ -786,10 +790,11 @@ class ProductTemplate(models.Model):
                 _logger.info("WSSH Stock updated for product %s (variant %s): %s available",
                              variant.product_tmpl_id.name, variant.name, available_qty)
                 updated_ids.append(variant.id)
-                # Actualizar shopify_instance tras cada éxito
-                shopify_instance.write({
-                    'last_export_stock_id': variant.id
-                })
+                # Actualizar shopify_instance tras cada éxito con el ID del quant
+                if quant:
+                    shopify_instance.write({
+                        'last_export_stock_id': quant.id
+                    })
             else:
                 _logger.warning("WSSH Failed to update stock for product %s (variant %s): %s",
                                 variant.product_tmpl_id.name, variant.name, response.text)
