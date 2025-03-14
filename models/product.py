@@ -741,7 +741,7 @@ class ProductTemplate(models.Model):
         # Buscar stock.quants con el orden apropiado
         quants = self.env['stock.quant'].sudo().search(quant_domain, order=order)
         # Obtener variantes únicas de los quants        
-        variants = self.sudo().browse(quants.mapped('product_id').ids)
+        variants = self.env['product.product'].sudo().browse(quants.mapped('product_id').ids)
         # Filtrar variantes con shopify_stock_map_ids válidos
         variants = variants.filtered(lambda v: any(
             m.shopify_instance_id == shopify_instance and m.web_stock_id and m.shopify_location_id == location
