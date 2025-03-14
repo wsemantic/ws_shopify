@@ -32,4 +32,13 @@ class StockQuant(models.Model):
     def prepare_vals_for_inventory_adjustment(self, location_id, product_id, product_qty):
        
         return {'location_id': location_id.id, 'product_id': product_id,
-                'inventory_quantity': product_qty}
+                'inventory_quantity': product_qty}                
+    
+    def _unlink_zero_quants(self):
+        """
+        Override the method to prevent deletion of zero quants
+        that might be referenced by external connectors.
+        """
+        # Este método vacío sobrescribe la funcionalidad original
+        # y evita que se eliminen los quants con cantidad cero
+        return True                
