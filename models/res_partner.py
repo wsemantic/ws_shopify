@@ -120,10 +120,13 @@ class ResPartner(models.Model):
                         'partner_id': partner.id,
                         'shopify_partner_id': shopify_customer.get('id'),
                         'shopify_instance_id': shopify_instance_id.id,
-                    })                
+                    })            
+                    if skip_existing_customer:
+                        partner.write({'user_id',shopify_instance_id.salesperson_id.id if shopify_instance_id.salesperson_id else False})  # Asignar comercial                    
                 if not skip_existing_customer:
                     vals_update = self.prepare_customer_vals(shopify_customer, shopify_instance_id)
                     partner.with_context(no_vat_validation=True).write(vals_update)
+                
             else:
                 _logger.info(f"WSSH Partner NO encontrado id {shopify_customer.get('id')}")
                 vals = self.prepare_customer_vals(shopify_customer, shopify_instance_id)  
