@@ -112,18 +112,18 @@ class ResPartner(models.Model):
             partner = self._find_existing_partner(shopify_customer, shopify_instance_id)
             if partner:
                 _logger.info(f"WSSH Partner existente encontrado {partner.name} id {shopify_customer.get('id')} skip {skip_existing_customer}")
+                mapping = partner.shopify_partner_map_ids.filtered(lambda m: m.shopify_instance_id == shopify_instance_id)
+                if mapping:
+                    mapping.write({'shopify_partner_id': shopify_customer.get('id')})
+                else:
+                    self.env['shopify.partner.map'].create({
+                        'partner_id': partner.id,
+                        'shopify_partner_id': shopify_customer.get('id'),
+                        'shopify_instance_id': shopify_instance_id.id,
+                    })                
                 if not skip_existing_customer:
                     vals_update = self.prepare_customer_vals(shopify_customer, shopify_instance_id)
                     partner.with_context(no_vat_validation=True).write(vals_update)
-                    mapping = partner.shopify_partner_map_ids.filtered(lambda m: m.shopify_instance_id == shopify_instance_id)
-                    if mapping:
-                        mapping.write({'shopify_partner_id': shopify_customer.get('id')})
-                    else:
-                        self.env['shopify.partner.map'].create({
-                            'partner_id': partner.id,
-                            'shopify_partner_id': shopify_customer.get('id'),
-                            'shopify_instance_id': shopify_instance_id.id,
-                        })
             else:
                 _logger.info(f"WSSH Partner NO encontrado id {shopify_customer.get('id')}")
                 vals = self.prepare_customer_vals(shopify_customer, shopify_instance_id)  
