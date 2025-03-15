@@ -24,6 +24,7 @@
                                     <group>
                                         <field name="shopify_version"/>
                                         <field name="shopify_host"/>
+										<field name="salesperson_id"/> 
                                         <field name="shopify_active"/>
                                     </group>
                                 </group>

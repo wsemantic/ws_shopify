@@ -34,9 +34,12 @@ class ShopifyInstance(models.Model):
     color_option_position = fields.Integer(string="Color Option Position", default=1, help="Define en qué opción de Shopify se mapeará el color (por defecto, en la opción 1).")
     size_option_position = fields.Integer(string="Size Option Position", default=2, help="Define en qué opción de Shopify se mapeará la talla (por defecto, en la opción 2).")
     
-    last_export_stock_id = fields.Integer(string="Último ID Stock exportado", default=0, help="ID del último stock exportado"
-)
-  
+    last_export_stock_id = fields.Integer(string="Último ID Stock exportado", default=0, help="ID del último stock exportado")
+    salesperson_id = fields.Many2one(
+        'res.users', 
+        string='Salesperson', 
+        help='Default salesperson assigned to customers and orders from this Shopify instance.'
+    )
 
 
     # create a method to authenticate with shopify instance

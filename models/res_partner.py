@@ -102,6 +102,7 @@ class ResPartner(models.Model):
             'city': city,
             'zip': zip,
             'country_id': country_id,
+            'user_id': shopify_instance_id.salesperson_id.id if shopify_instance_id.salesperson_id else False,  # Asignar comercial
         }
         return vals
 

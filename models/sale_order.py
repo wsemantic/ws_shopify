@@ -102,6 +102,7 @@ class SaleOrder(models.Model):
                     'name': order.get('name'),
                     'create_date': date_order_value,
                     'date_order': date_order_value,
+                    'user_id': shopify_instance_id.salesperson_id.id if shopify_instance_id.salesperson_id else False,  # Asignar comercial
                 }
                                         
                 sale_order_rec = self.sudo().create(sale_order_vals)
