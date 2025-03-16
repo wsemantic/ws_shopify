@@ -6,10 +6,10 @@
         <field name="model">product.product</field>
         <field name="inherit_id" ref="product.product_normal_form_view"/>
         <field name="arch" type="xml">
-            <!-- Add Shopify mappings after the 'general information' group or at the end -->
+            <!-- Add Shopify mappings after the 'group_general' group -->
             <xpath expr="//group[@name='group_general']" position="after">
-                <group string="Shopify Details">
-                    <group string="Shopify Variant Mappings">
+                <group name="shopify_details" string="Shopify Details">
+                    <group name="shopify_variant_mappings" string="Shopify Variant Mappings">
                         <field name="shopify_variant_map_ids">
                             <!-- Inline editable tree view -->
                             <tree editable="bottom">
@@ -27,10 +27,10 @@
                     </group>
                 </group>
             </xpath>
-            <!-- Fallback: If group_general is not found, add at the end of the form -->
+            <!-- Fallback: Add at the end of the form if group_general is not found -->
             <xpath expr="//form" position="inside">
-                <group string="Shopify Details" position="after">
-                    <group string="Shopify Variant Mappings">
+                <group name="shopify_details_fallback" string="Shopify Details">
+                    <group name="shopify_variant_mappings_fallback" string="Shopify Variant Mappings">
                         <field name="shopify_variant_map_ids">
                             <tree editable="bottom">
                                 <field name="web_variant_id" string="Shopify Variant ID"/>
@@ -48,6 +48,7 @@
             </xpath>
         </field>
     </record>
+
 	
 	<record id="action_product_template_shopify" model="ir.actions.act_window">
         <field name="name">Products</field>
