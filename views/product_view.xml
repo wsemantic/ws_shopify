@@ -1,33 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Product Template Form View Inherited: pestaña "Shopify" mostrando mapeos por color -->
-    <record model="ir.ui.view" id="product_template_shopify_form">
-        <field name="name">product.template.form.view.inherit.shopify</field>
-        <field name="model">product.template</field>
-        <field name="inherit_id" ref="product.product_template_only_form_view"/>
+    <!-- Inherit the product.product form view -->
+    <record id="view_product_product_form_shopify_inherit" model="ir.ui.view">
+        <field name="name">product.product.form.inherit.shopify</field>
+        <field name="model">product.product</field>
+        <field name="inherit_id" ref="product.product_product_view_form"/>
         <field name="arch" type="xml">
-            <xpath expr="//page[@name='general_information']" position="after">
-                <page string="Shopify">
+            <!-- Add a new page after the 'Notes' page -->
+            <xpath expr="//page[@name='notes']" position="after">
+                <page name="shopify_details" string="Shopify">
                     <group>
-                        <!-- Se navega por las líneas de atributos filtradas por color -->
-                        <field name="attribute_line_ids" domain="[('attribute_id.name','=','color')]" nolabel="1">
-                            <tree>
-                                <field name="attribute_id" string="Atributo"/>
-                                <!-- Dentro de cada línea, se muestran los valores (product.template.attribute.value) -->
-                                <field name="product_template_value_ids" widget="one2many_list" nolabel="1">
-                                    <tree editable="bottom">
-                                        <field name="name" string="Color"/>
-                                        <!-- Desde cada valor se muestran los mapeos asociados -->
-                                        <field name="shopify_product_map_ids" widget="one2many_list" nolabel="1">
-                                            <tree editable="bottom">
-                                                <field name="shopify_instance_id" string="Instancia"/>
-                                                <field name="web_product_id" string="ID Producto Shopify"/>
-                                            </tree>
-                                        </field>
-                                    </tree>
-                                </field>
-                            </tree>
-                        </field>
+                        <group string="Shopify Variant Mappings">
+                            <field name="shopify_variant_map_ids">
+                                <!-- Inline editable tree view -->
+                                <tree editable="bottom">
+                                    <field name="web_variant_id" string="Shopify Variant ID"/>
+                                    <field name="shopify_instance_id" string="Shopify Instance"/>
+                                </tree>
+                                <!-- Form view for detailed editing -->
+                                <form string="Shopify Variant Map">
+                                    <group>
+                                        <field name="web_variant_id" string="Shopify Variant ID"/>
+                                        <field name="shopify_instance_id" string="Shopify Instance"/>
+                                    </group>
+                                </form>
+                            </field>
+                        </group>
                     </group>
                 </page>
             </xpath>
