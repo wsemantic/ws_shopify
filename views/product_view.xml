@@ -6,28 +6,45 @@
         <field name="model">product.product</field>
         <field name="inherit_id" ref="product.product_normal_form_view"/>
         <field name="arch" type="xml">
-            <!-- Add a new page after the 'Notes' page -->
-            <xpath expr="//page[@name='notes']" position="after">
-                <page name="shopify_details" string="Shopify">
-                    <group>
-                        <group string="Shopify Variant Mappings">
-                            <field name="shopify_variant_map_ids">
-                                <!-- Inline editable tree view -->
-                                <tree editable="bottom">
+            <!-- Add Shopify mappings after the 'general information' group or at the end -->
+            <xpath expr="//group[@name='group_general']" position="after">
+                <group string="Shopify Details">
+                    <group string="Shopify Variant Mappings">
+                        <field name="shopify_variant_map_ids">
+                            <!-- Inline editable tree view -->
+                            <tree editable="bottom">
+                                <field name="web_variant_id" string="Shopify Variant ID"/>
+                                <field name="shopify_instance_id" string="Shopify Instance"/>
+                            </tree>
+                            <!-- Form view for detailed editing -->
+                            <form string="Shopify Variant Map">
+                                <group>
                                     <field name="web_variant_id" string="Shopify Variant ID"/>
                                     <field name="shopify_instance_id" string="Shopify Instance"/>
-                                </tree>
-                                <!-- Form view for detailed editing -->
-                                <form string="Shopify Variant Map">
-                                    <group>
-                                        <field name="web_variant_id" string="Shopify Variant ID"/>
-                                        <field name="shopify_instance_id" string="Shopify Instance"/>
-                                    </group>
-                                </form>
-                            </field>
-                        </group>
+                                </group>
+                            </form>
+                        </field>
                     </group>
-                </page>
+                </group>
+            </xpath>
+            <!-- Fallback: If group_general is not found, add at the end of the form -->
+            <xpath expr="//form" position="inside">
+                <group string="Shopify Details" position="after">
+                    <group string="Shopify Variant Mappings">
+                        <field name="shopify_variant_map_ids">
+                            <tree editable="bottom">
+                                <field name="web_variant_id" string="Shopify Variant ID"/>
+                                <field name="shopify_instance_id" string="Shopify Instance"/>
+                            </tree>
+                            <form string="Shopify Variant Map">
+                                <group>
+                                    <field name="web_variant_id" string="Shopify Variant ID"/>
+                                    <field name="shopify_instance_id" string="Shopify Instance"/>
+                                </group>
+                            </form>
+                        </field>
+                    </group>
+                </group>
             </xpath>
         </field>
     </record>
