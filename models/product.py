@@ -543,7 +543,7 @@ class ProductTemplate(models.Model):
         response = requests.put(url, headers=headers, data=json.dumps({"variant": variant_data}))
         
         if response.ok:
-            #_logger.info(f"WSSH Successfully updated variant {variant.default_code} in Shopify")
+            pass #_logger.info(f"WSSH Successfully updated variant {variant.default_code} in Shopify")
         else:
             _logger.error(f"WSSH Error updating variant {variant.default_code}: {response.text}")
             raise UserError(f"WSSH Error updating variant {variant.default_code}: {response.text}")            
