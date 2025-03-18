@@ -26,6 +26,7 @@
                                         <field name="shopify_host"/>
 										<field name="salesperson_id"/> 
                                         <field name="shopify_active"/>
+										<field name="prices_include_tax"/>
                                     </group>
                                 </group>
                             </page>

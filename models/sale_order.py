@@ -193,7 +193,11 @@ class SaleOrder(models.Model):
                 for tax_line in line.get('tax_lines', []):
                     if tax_line.get('rate'):
                         tax_rate_total += float(tax_line.get('rate'))
-                price_excl = round(price_incl / (1 + tax_rate_total), 2) if tax_rate_total else price_incl
+                # Si los precios no incluyen IVA, no dividir; usar el precio tal cual
+                if shopify_instance_id.prices_include_tax:
+                    price_excl = round(price_incl / (1 + tax_rate_total), 2) if tax_rate_total else price_incl
+                else:
+                    price_excl = price_incl
 
                 shopify_order_line_vals = {
                     'order_id': shopify_order_id.id,
