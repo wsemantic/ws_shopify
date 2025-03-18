@@ -378,7 +378,10 @@ class ProductTemplate(models.Model):
             if attr.name and attr.name.lower().find('color') != -1:
                 color_attribute = attr
                 break
-
+                
+        if not shopify_instance_ids:
+            shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
+            
         for instance_id in shopify_instance_ids:        
             export_update_time = fields.Datetime.now()            
             # Siempre filtramos por productos publicados
@@ -711,105 +714,110 @@ class ProductTemplate(models.Model):
         return variant_data
         
                  
-    def export_stock_to_shopify(self, shopify_instance):
+    def export_stock_to_shopify(self, shopify_instance_ids):
         _logger.info("WSSH Exportar stocks")
-        updated_ids = []
-        location = self.env['shopify.location'].sudo().search([('shopify_instance_id', '=', shopify_instance.id)], limit=1)
         
-        if not location:
-            _logger.warning("No shopify.location found for instance %s", shopify_instance.name)
-            return updated_ids
-        
-        # Dominio para stock.quant
-        quant_domain = [
-            ('write_date', '>=', shopify_instance.last_export_stock or '1900-01-01 00:00:00'),
-            ('id', '>', shopify_instance.last_export_stock_id or 0)
-        ]
-        if location.import_stock_warehouse_id:
-            quant_domain.append(('location_id', '=', location.import_stock_warehouse_id.id))
-        
-        # Determinar el orden según si venimos de un timeout o no
-        if shopify_instance.last_export_stock_id > 0:
-            # Si venimos de un timeout, ordenar solo por ID para continuar donde lo dejamos
-            order = "id asc"
-            _logger.info(f"WSSH Continuando desde ID {shopify_instance.last_export_stock_id} (timeout previo)")
-        else:
-            # Si es un proceso nuevo, ordenar por fecha y luego ID
-            order = "write_date asc, id asc"
-            _logger.info(f"WSSH Iniciando nuevo proceso desde fecha {shopify_instance.last_export_stock}")
-        
-        # Buscar stock.quants con el orden apropiado
-        quants = self.env['stock.quant'].sudo().search(quant_domain, order=order)
-        # Obtener variantes únicas de los quants        
-        variants = self.env['product.product'].sudo().browse(quants.mapped('product_id').ids)
-        # Filtrar variantes con shopify_stock_map_ids válidos
-        variants = variants.filtered(lambda v: any(
-            m.shopify_instance_id == shopify_instance and m.web_stock_id and m.shopify_location_id == location
-            for m in v.shopify_stock_map_ids
-        ))
-        
-        _logger.info(f"WSSH Found {len(variants)} variants desde {shopify_instance.last_export_stock}")
-        
-        # Control de tiempo
-        last_query_time = time.time()
-        iteration_timeout = 250
-        iteration_start_time = time.time()
-        
-        for variant in variants:
-            stock_map = variant.shopify_stock_map_ids.filtered(lambda m: m.shopify_instance_id == shopify_instance)
-            if not stock_map or not stock_map.web_stock_id:
-                continue
+        if not shopify_instance_ids:
+            shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
+   
+        for shopify_instance in shopify_instance_ids: 
+            updated_ids = []
+            location = self.env['shopify.location'].sudo().search([('shopify_instance_id', '=', shopify_instance.id)], limit=1)
             
-            # Obtener cantidad disponible desde stock.quant
-            domain = [('product_id', '=', variant.id)]
-            if location.import_stock_warehouse_id:
-                domain.append(('location_id', '=', location.import_stock_warehouse_id.id))
-            quant = self.env['stock.quant'].sudo().search(domain, limit=1)
-            available_qty = quant.quantity if quant else 0
-            
-            # Control de tiempo entre peticiones
-            elapsed = time.time() - last_query_time
-            if elapsed < 0.5:
-                time.sleep(0.5 - elapsed)
-            last_query_time = time.time()
-            
-            # Enviar solicitud a Shopify
-            url = self.get_products_url(shopify_instance, 'inventory_levels/set.json')
-            headers = {
-                "X-Shopify-Access-Token": shopify_instance.shopify_shared_secret,
-                "Content-Type": "application/json"
-            }
-            data_payload = {
-                "location_id": location.shopify_location_id,
-                "inventory_item_id": stock_map.web_stock_id,
-                "available": int(available_qty),
-            }
-            
-            response = requests.post(url, headers=headers, json=data_payload)
-            if response.status_code in (200, 201):
-                _logger.info("WSSH Stock updated for product %s (variant %s): %s available",
-                             variant.product_tmpl_id.name, variant.name, available_qty)
-                updated_ids.append(variant.id)
-                # Actualizar shopify_instance tras cada éxito con el ID del quant
-                if quant:
-                    shopify_instance.write({
-                        'last_export_stock_id': quant.id
-                    })
-            else:
-                _logger.warning("WSSH Failed to update stock for product %s (variant %s): %s",
-                                variant.product_tmpl_id.name, variant.name, response.text)
-            
-            # Verificar timeout
-            if time.time() - iteration_start_time > iteration_timeout:
-                _logger.error("WSSH Timeout de iteración alcanzado para el producto %s.", variant.default_code)
+            if not location:
+                _logger.warning("No shopify.location found for instance %s", shopify_instance.name)
                 return updated_ids
-        
-        # Si se procesan todos los productos, actualizar a la fecha actual
-        shopify_instance.write({
-            'last_export_stock': fields.Datetime.now(),
-            'last_export_stock_id': 0
-        })
-        return updated_ids
+            
+            # Dominio para stock.quant
+            quant_domain = [
+                ('write_date', '>=', shopify_instance.last_export_stock or '1900-01-01 00:00:00'),
+                ('id', '>', shopify_instance.last_export_stock_id or 0)
+            ]
+            if location.import_stock_warehouse_id:
+                quant_domain.append(('location_id', '=', location.import_stock_warehouse_id.id))
+            
+            # Determinar el orden según si venimos de un timeout o no
+            if shopify_instance.last_export_stock_id > 0:
+                # Si venimos de un timeout, ordenar solo por ID para continuar donde lo dejamos
+                order = "id asc"
+                _logger.info(f"WSSH Continuando desde ID {shopify_instance.last_export_stock_id} (timeout previo)")
+            else:
+                # Si es un proceso nuevo, ordenar por fecha y luego ID
+                order = "write_date asc, id asc"
+                _logger.info(f"WSSH Iniciando nuevo proceso desde fecha {shopify_instance.last_export_stock}")
+            
+            # Buscar stock.quants con el orden apropiado
+            quants = self.env['stock.quant'].sudo().search(quant_domain, order=order)
+            # Obtener variantes únicas de los quants        
+            variants = self.env['product.product'].sudo().browse(quants.mapped('product_id').ids)
+            # Filtrar variantes con shopify_stock_map_ids válidos
+            variants = variants.filtered(lambda v: any(
+                m.shopify_instance_id == shopify_instance and m.web_stock_id and m.shopify_location_id == location
+                for m in v.shopify_stock_map_ids
+            ))
+            
+            _logger.info(f"WSSH Found {len(variants)} variants desde {shopify_instance.last_export_stock}")
+            
+            # Control de tiempo
+            last_query_time = time.time()
+            iteration_timeout = 250
+            iteration_start_time = time.time()
+            
+            for variant in variants:
+                stock_map = variant.shopify_stock_map_ids.filtered(lambda m: m.shopify_instance_id == shopify_instance)
+                if not stock_map or not stock_map.web_stock_id:
+                    continue
+                
+                # Obtener cantidad disponible desde stock.quant
+                domain = [('product_id', '=', variant.id)]
+                if location.import_stock_warehouse_id:
+                    domain.append(('location_id', '=', location.import_stock_warehouse_id.id))
+                quant = self.env['stock.quant'].sudo().search(domain, limit=1)
+                available_qty = quant.quantity if quant else 0
+                
+                # Control de tiempo entre peticiones
+                elapsed = time.time() - last_query_time
+                if elapsed < 0.5:
+                    time.sleep(0.5 - elapsed)
+                last_query_time = time.time()
+                
+                # Enviar solicitud a Shopify
+                url = self.get_products_url(shopify_instance, 'inventory_levels/set.json')
+                headers = {
+                    "X-Shopify-Access-Token": shopify_instance.shopify_shared_secret,
+                    "Content-Type": "application/json"
+                }
+                data_payload = {
+                    "location_id": location.shopify_location_id,
+                    "inventory_item_id": stock_map.web_stock_id,
+                    "available": int(available_qty),
+                }
+                
+                response = requests.post(url, headers=headers, json=data_payload)
+                if response.status_code in (200, 201):
+                    _logger.info("WSSH Stock updated for product %s (variant %s): %s available",
+                                 variant.product_tmpl_id.name, variant.name, available_qty)
+                    updated_ids.append(variant.id)
+                    # Actualizar shopify_instance tras cada éxito con el ID del quant
+                    if quant:
+                        shopify_instance.write({
+                            'last_export_stock_id': quant.id
+                        })
+                else:
+                    _logger.warning("WSSH Failed to update stock for product %s (variant %s): %s",
+                                    variant.product_tmpl_id.name, variant.name, response.text)
+                
+                # Verificar timeout
+                if time.time() - iteration_start_time > iteration_timeout:
+                    _logger.error("WSSH Timeout de iteración alcanzado para el producto %s.", variant.default_code)
+                    return updated_ids
+            
+            # Si se procesan todos los productos, actualizar a la fecha actual
+            shopify_instance.write({
+                'last_export_stock': fields.Datetime.now(),
+                'last_export_stock_id': 0
+            })
+            return updated_ids
 
 # inherit class product.attribute and add fields for shopify
 class ProductAttribute(models.Model):
