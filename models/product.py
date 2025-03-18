@@ -422,7 +422,7 @@ class ProductTemplate(models.Model):
                 product_processed = False                                                                                          
                
                 for template_attribute_value in color_line.product_template_value_ids:
-                    _logger.info(f"WSSH Exporting product: {product.name} (ID:{product.id}) update {update} variante {template_attribute_value.name}")
+                    #_logger.info(f"WSSH Exporting product: {product.name} (ID:{product.id}) update {update} variante {template_attribute_value.name}")
                     response = None
                     # Filtrar variantes para este color
                     variants = product.product_variant_ids.filtered(
@@ -438,7 +438,7 @@ class ProductTemplate(models.Model):
                     new_variants = variants.filtered(
                         lambda v: not v.shopify_variant_map_ids.filtered(lambda m: m.shopify_instance_id == instance_id)
                     )
-                    _logger.info(f"WSSH Total variants: {len(variants)}, New variants: {len(new_variants)}")
+                    #_logger.info(f"WSSH Total variants: {len(variants)}, New variants: {len(new_variants)}")
                     # Preparar datos para Shopify
                     variant_data = [
                         self._prepare_shopify_variant_data(variant, instance_id, template_attribute_value, True, update)
@@ -492,7 +492,7 @@ class ProductTemplate(models.Model):
 
                         url = self.get_products_url(instance_id, 'products.json')
                         response = requests.post(url, headers=headers, data=json.dumps(product_data))
-                        _logger.info("WSSHCreating new Shopify product")
+                        #_logger.info("WSSHCreating new Shopify product")
 
                         if response.ok:
                             product_processed = True
@@ -529,7 +529,7 @@ class ProductTemplate(models.Model):
             
     def _update_shopify_variant(self, variant, instance_id, headers):
         if not variant.barcode:
-            _logger.warning(f"WSSH Skipping variant {variant.default_code} without barcode")
+            #_logger.warning(f"WSSH Skipping variant {variant.default_code} without barcode")
             return None  # O lanzar una excepción si prefieres
         
         variant_map = variant.shopify_variant_map_ids.filtered(lambda m: m.shopify_instance_id == instance_id)
@@ -543,7 +543,7 @@ class ProductTemplate(models.Model):
         response = requests.put(url, headers=headers, data=json.dumps({"variant": variant_data}))
         
         if response.ok:
-            _logger.info(f"WSSH Successfully updated variant {variant.default_code} in Shopify")
+            #_logger.info(f"WSSH Successfully updated variant {variant.default_code} in Shopify")
         else:
             _logger.error(f"WSSH Error updating variant {variant.default_code}: {response.text}")
             raise UserError(f"WSSH Error updating variant {variant.default_code}: {response.text}")            
@@ -606,7 +606,7 @@ class ProductTemplate(models.Model):
                 product.is_shopify_product = True
                 product.shopify_instance_id = instance_id.id
                 product.is_exported = True
-                _logger.info(f"WSSH Successfully exported product {product.name}")
+                #_logger.info(f"WSSH Successfully exported product {product.name}")
         else:
             _logger.error(f"WSSH Error exporting product: {response.text}")
             raise UserError(f"WSSH Error exporting product {product.name}: {response.text}")
@@ -633,7 +633,7 @@ class ProductTemplate(models.Model):
                 if shopify_sku     and (shopify_sku == odoo_sku)         or \
                    shopify_barcode and (shopify_barcode == odoo_barcode):
                     matched_shopi_variant = shopify_variant
-                    _logger.info(f"WSSH Match encontrado: Shopify SKU/Barcode: {shopify_sku}/{shopify_barcode} coincide con Odoo SKU/Barcode: {odoo_sku}/{odoo_barcode}")
+                    #_logger.info(f"WSSH Match encontrado: Shopify SKU/Barcode: {shopify_sku}/{shopify_barcode} coincide con Odoo SKU/Barcode: {odoo_sku}/{odoo_barcode}")
                     break
     
             if matched_shopi_variant:
@@ -644,14 +644,14 @@ class ProductTemplate(models.Model):
                 if variant_map:
                     if variant_map.web_variant_id != matched_shopi_variant.get('id'):
                         variant_map.write({'web_variant_id': matched_shopi_variant.get('id')})
-                        _logger.info("Updated variant map for Odoo variant (SKU: %s)", odoo_variant.default_code)
+                        #_logger.info("Updated variant map for Odoo variant (SKU: %s)", odoo_variant.default_code)
                 else:
                     self.env['shopify.variant.map'].create({
                         'web_variant_id': matched_shopi_variant.get('id'),
                         'odoo_id': odoo_variant.id,
                         'shopify_instance_id': instance_id.id,
                     })
-                    _logger.info("Created variant map for Odoo variant (SKU: %s)", odoo_variant.default_code)
+                    #_logger.info("Created variant map for Odoo variant (SKU: %s)", odoo_variant.default_code)
     
                 # Actualizar o crear el mapeo de stock basado en la variante y la ubicación
                 if shopify_location:
@@ -665,7 +665,7 @@ class ProductTemplate(models.Model):
                     if stock_map:                                                                                                                                        
                         if stock_map.web_stock_id != matched_shopi_variant.get('inventory_item_id'):
                             stock_map.write({'web_stock_id': matched_shopi_variant.get('inventory_item_id')})
-                            _logger.info("Updated stock map for Odoo variant (SKU: %s)", odoo_variant.default_code)                                                                                  
+                            #_logger.info("Updated stock map for Odoo variant (SKU: %s)", odoo_variant.default_code)                                                                                  
                     else:
                         self.env['shopify.stock.map'].create({
                             'web_stock_id': matched_shopi_variant.get('inventory_item_id'),
@@ -673,7 +673,7 @@ class ProductTemplate(models.Model):
                             'shopify_instance_id': instance_id.id,
                             'shopify_location_id': shopify_location.id,
                         })
-                        _logger.info("Created stock map for Odoo variant (SKU: %s)", odoo_variant.default_code)
+                        #_logger.info("Created stock map for Odoo variant (SKU: %s)", odoo_variant.default_code)
                                                                                          
                 else:
                     _logger.warning("No shopify.location found for instance %s", instance_id.name)
@@ -795,8 +795,7 @@ class ProductTemplate(models.Model):
                 
                 response = requests.post(url, headers=headers, json=data_payload)
                 if response.status_code in (200, 201):
-                    _logger.info("WSSH Stock updated for product %s (variant %s): %s available",
-                                 variant.product_tmpl_id.name, variant.name, available_qty)
+                    #_logger.info("WSSH Stock updated for product %s (variant %s): %s available",variant.product_tmpl_id.name, variant.name, available_qty)
                     updated_ids.append(variant.id)
                     # Actualizar shopify_instance tras cada éxito con el ID del quant
                     if quant:
