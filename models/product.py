@@ -413,8 +413,8 @@ class ProductTemplate(models.Model):
         locations = self.env['shopify.location'].sudo().search([('is_shopify', '=', True)])
         loc_ids = ','.join(str(loc.shopify_location_id) for loc in locations) if locations else ''
         return loc_ids
-
-    def export_products_to_shopify(self, shopify_instance_ids, update=False):
+        
+    def export_products_to_shopify(self, shopify_instance_ids, update=False, products=None):
         """
         Exporta productos a Shopify, filtrando por aquellos modificados desde la última exportación.
         """
@@ -429,13 +429,17 @@ class ProductTemplate(models.Model):
             
         for instance_id in shopify_instance_ids:        
             export_update_time = fields.Datetime.now()            
-            # Siempre filtramos por productos publicados
-            domain = [('is_published', '=', True)]
-            if instance_id.last_export_product:
-                _logger.info(f"WSSH Starting product export por fecha {instance_id.last_export_product} instance {instance_id.name} atcolor {color_attribute}") 
-                domain.append(('write_date', '>', instance_id.last_export_product))
+            # Si products está informado, usarlo; de lo contrario, buscar productos publicados
+            if products is not None:
+                products_to_export = products
+            else:
+                domain = [('is_published', '=', True)]
+                if instance_id.last_export_product:
+                    _logger.info(f"WSSH Starting product export por fecha {instance_id.last_export_product} instance {instance_id.name} atcolor {color_attribute}") 
+                    domain.append(('write_date', '>', instance_id.last_export_product))
 
-            products_to_export = self.search(domain, order='write_date')
+                products_to_export = self.search(domain, order='write_date')
+                
             product_count = len(products_to_export)
             _logger.info("WSSH Found %d products to export for instance %s", product_count, instance_id.name)
         
