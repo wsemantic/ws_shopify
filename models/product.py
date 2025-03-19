@@ -14,6 +14,51 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
+# Mapeo de tallas con letras a valores numéricos para ordenación
+SIZE_MAPPING = {
+    '4XS': 0,
+    'XXXXS': 0,
+    'XXXS': 1,
+    '3XS': 1,
+    'XXS': 2,
+    '2XS': 2,
+    'XS': 3,
+    'S': 4,
+    'M': 5,
+    'L': 6,
+    'XL': 7,
+    'XXL': 8,
+    '2XL': 8,
+    'XXXL': 9,
+    '3XL': 9,
+    'XXXXL': 10,
+    '4XL': 10,
+}
+
+def get_size_value(size):
+    """Convierte una talla en un valor comparable para ordenación."""
+    if not size:
+        return 0
+    size = size.upper().strip()
+    if size in SIZE_MAPPING:
+        return SIZE_MAPPING[size]
+    # Manejar tallas como "2XL" o "3XS"
+    match = re.match(r'(\d+)X([SLM])', size)
+    if match:
+        num_x = int(match.group(1))
+        base_size = match.group(2)
+        if base_size == 'S':
+            return SIZE_MAPPING['S'] - num_x
+        elif base_size == 'L':
+            return SIZE_MAPPING['L'] + num_x
+        elif base_size == 'M':
+            return SIZE_MAPPING['M']
+    # Intentar convertir a número para tallas numéricas
+    try:
+        return float(size)
+    except ValueError:
+        return size  # Orden alfabético como fallback
+
 class ProductTemplateAttributeValue(models.Model):
     _inherit = 'product.template.attribute.value'
 
@@ -439,12 +484,17 @@ class ProductTemplate(models.Model):
                         lambda v: not v.shopify_variant_map_ids.filtered(lambda m: m.shopify_instance_id == instance_id)
                     )
                     #_logger.info(f"WSSH Total variants: {len(variants)}, New variants: {len(new_variants)}")
-                    # Preparar datos para Shopify
+                    # Preparar datos para Shopify y ordenar por tamaño
                     variant_data = [
-                        self._prepare_shopify_variant_data(variant, instance_id, template_attribute_value, True, update)
+                        self._prepare_shopify_variant_data(variant, instance_id, template_attribute_value, instance_id.split_products_by_color, update)
                         for variant in variants
                         if variant.default_code
                     ]
+                    # Ordenar variantes por tamaño
+                    variant_data.sort(key=lambda v: get_size_value(v.get(f"option{instance_id.size_option_position}", "")))
+                    # Asignar posiciones explícitas
+                    for position, variant in enumerate(variant_data, 1):
+                        variant["position"] = position
                     
                     # Si no hay variantes con default_code, se salta este producto virtual
                     if not variant_data:
@@ -463,7 +513,7 @@ class ProductTemplate(models.Model):
                                 {
                                     "name": "Size",
                                     "position": instance_id.size_option_position,
-                                    "values": sorted(set(v.get(f"option{instance_id.size_option_position}", "") for v in variant_data))
+                                    "values": sorted(set(v.get(f"option{instance_id.size_option_position}", "") for v in variant_data), key=get_size_value)
                                 }
                             ],
                             "tags": ','.join(tag.name for tag in product.product_tag_ids),
