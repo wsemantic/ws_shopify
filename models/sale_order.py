@@ -188,7 +188,7 @@ class SaleOrder(models.Model):
                 
             if product:
                 # Precio recibido de Shopify (incluye IVA y descuento ya aplicado)
-                price_incl = float(line.get('price')) - float(line.get('total_discount', 0))
+                price_incl = float(line.get('price')) # aplico descuento al precio globalmente con campo total_discount_percentage más abajo #- float(line.get('total_discount', 0))
                 tax_rate_total = 0.0
                 for tax_line in line.get('tax_lines', []):
                     if tax_line.get('rate'):
