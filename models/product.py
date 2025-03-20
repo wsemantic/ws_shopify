@@ -38,26 +38,31 @@ SIZE_MAPPING = {
 def get_size_value(size):
     """Convierte una talla en un valor comparable para ordenación."""
     if not size:
-        return 0
+        return (0, 0)  # Prioridad numérica, valor 0
+    
     size = size.upper().strip()
     if size in SIZE_MAPPING:
-        return SIZE_MAPPING[size]
+        return (0, SIZE_MAPPING[size])  # Prioridad numérica, valor del mapeo
+    
     # Manejar tallas como "2XL" o "3XS"
     match = re.match(r'(\d+)X([SLM])', size)
     if match:
+        _logger.info("WSSH get_size_value Fallback Match {size}")
         num_x = int(match.group(1))
         base_size = match.group(2)
         if base_size == 'S':
-            return SIZE_MAPPING['S'] - num_x
+            return (0, SIZE_MAPPING['S'] - num_x)
         elif base_size == 'L':
-            return SIZE_MAPPING['L'] + num_x
+            return (0, SIZE_MAPPING['L'] + num_x)
         elif base_size == 'M':
-            return SIZE_MAPPING['M']
+            return (0, SIZE_MAPPING['M'])
+    
     # Intentar convertir a número para tallas numéricas
     try:
-        return float(size)
+        return (0, float(size))  # Prioridad numérica, valor numérico
     except ValueError:
-        return size  # Orden alfabético como fallback
+        _logger.info("WSSH get_size_value Excepcion {size}")
+        return (1, size.lower())  # Prioridad alfabética, cadena en minúsculas
 
 class ProductTemplateAttributeValue(models.Model):
     _inherit = 'product.template.attribute.value'
