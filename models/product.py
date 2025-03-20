@@ -431,6 +431,7 @@ class ProductTemplate(models.Model):
             export_update_time = fields.Datetime.now()            
             # Si products está informado, usarlo; de lo contrario, buscar productos publicados
             if products is not None:
+                _logger.info(f"WSSH Seleccion manual Exportacion {len(products_to_export)}")
                 products_to_export = products
             else:
                 domain = [('is_published', '=', True)]
