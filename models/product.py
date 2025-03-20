@@ -479,7 +479,7 @@ class ProductTemplate(models.Model):
                                   and v.barcode
                     )
                     
-                    if not variants:
+                    if not variants and products is None:
                         _logger.info(f"WSSH No hay variantes con codigo {template_attribute_value.name}")
                         continue
 
