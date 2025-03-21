@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from odoo import models, fields, api
 
-class ShopifyProductMap(models.Model):
+class ShopifyProductMap(models.Model): #TODO refactorizar a ShopifyProductColorValueMap
     _name = 'shopify.product.map'
     _description = 'Mapping del producto entre la web y Odoo'
 
@@ -13,6 +13,20 @@ class ShopifyProductMap(models.Model):
         ('product_id_shopify_instance_unique', 
          'UNIQUE(odoo_id, shopify_instance_id)', 
          'La combinación de Producto en Odoo y Shopify Instance debe ser única.')
+    ]
+
+class ShopifyProductTemplateMap(models.Model):
+    _name = 'shopify.product.template.map'
+    _description = 'Mapping del product template entre la web y Odoo'
+
+    web_product_id = fields.Char(string="ID del producto en la web", required=True)
+    odoo_id = fields.Many2one('product.template', string="Product Template en Odoo", required=True, ondelete='cascade')
+    shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance')
+    
+    _sql_constraints = [
+        ('product_template_id_shopify_instance_unique', 
+         'UNIQUE(odoo_id, shopify_instance_id)', 
+         'La combinación de Product Template en Odoo y Shopify Instance debe ser única.')
     ]
 
 class ShopifyVariantMap(models.Model):
