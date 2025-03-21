@@ -253,8 +253,8 @@ class SaleOrder(models.Model):
         # Importa órdenes completas desde Shopify a Odoo
 
         if not shopify_instance_ids:
-            _logger.info(f"WSSH Importa ordenes todas las instancias")
             shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
+            _logger.info(f"WSSH Importa ordenes todas las instancias encontradas {len(shopify_instance_ids)}")
         else:
             _logger.info(f"WSSH Importa ordenes para ids {shopify_instance_ids}")
          
