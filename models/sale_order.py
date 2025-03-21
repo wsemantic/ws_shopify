@@ -257,8 +257,9 @@ class SaleOrder(models.Model):
             _logger.info(f"WSSH Importa ordenes todas las instancias encontradas {len(shopify_instance_ids)}")
         else:
             _logger.info(f"WSSH Importa ordenes para ids {shopify_instance_ids}")
-         
-       
+            
+        orders_total = []
+        
         for shopify_instance_id in shopify_instance_ids:
             self.import_shopify_draft_orders(shopify_instance_id, skip_existing_order, from_date, to_date)
             # import shopify oders from shopify to odoo
@@ -302,11 +303,13 @@ class SaleOrder(models.Model):
             if all_orders:
                 _logger.info(f"WSSH Found {len(all_orders)} para {shopify_instance_id.name}")
                 orders = self.create_shopify_order(all_orders, shopify_instance_id, skip_existing_order, status='open')
+                orders_total.extend(orders)
                 shopify_instance_id.shopify_last_date_order_import = fields.Datetime.now()
-                return orders
             else:
                 _logger.info(f"WSSH No orders found in shopify {shopify_instance_id.name}")
-                return []        
+                
+    return orders_total
+     
 
     def export_orders_to_shopify(self, shopify_instance_ids, update):
         # Exporta órdenes de Odoo a Shopify como borradores
