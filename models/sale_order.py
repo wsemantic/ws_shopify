@@ -251,11 +251,13 @@ class SaleOrder(models.Model):
 
     def import_shopify_orders(self, shopify_instance_ids, skip_existing_order, from_date, to_date):
         # Importa órdenes completas desde Shopify a Odoo
+
         if not shopify_instance_ids:
+            _logger.info(f"WSSH Importa ordenes todas las instancias")
             shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
-        if not shopify_instance_ids:
-            shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
-       
+        else:
+            _logger.info(f"WSSH Importa ordenes para ids {shopify_instance_ids}")
+         
        
         for shopify_instance_id in shopify_instance_ids:
             self.import_shopify_draft_orders(shopify_instance_id, skip_existing_order, from_date, to_date)
