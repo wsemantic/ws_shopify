@@ -308,7 +308,7 @@ class SaleOrder(models.Model):
             else:
                 _logger.info(f"WSSH No orders found in shopify {shopify_instance_id.name}")
                 
-    return orders_total
+        return orders_total
      
 
     def export_orders_to_shopify(self, shopify_instance_ids, update):
