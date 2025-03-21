@@ -22,6 +22,7 @@ class ProductExportInstance(models.TransientModel):
         
         # Llamar al método de exportación con los productos seleccionados
         self.env['product.template'].export_products_to_shopify([instance_id], update=update, products=selected_products)
+        self.env['product.template'].export_stock_to_shopify([instance_id], products=selected_products)
         return {'type': 'ir.actions.act_window_close'}
 
     @api.model
