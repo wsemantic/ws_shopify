@@ -160,7 +160,7 @@ class SaleOrder(models.Model):
             ], limit=1)
             if not product:
                 # Intentar buscar por SKU (default_code) antes de usar el genérico
-                sku = line.get('sku')
+                sku = line.get('sku') or ''
                 if sku:
                     product_by_sku = self.env['product.product'].sudo().search([
                         ('default_code', '=', sku)
@@ -181,7 +181,8 @@ class SaleOrder(models.Model):
                     if not generic_product:
                         raise UserError(_(f"No se ha definido el producto {line.get('title')} {line.get('product_id')} variante {line.get('variant_id')}."))
                     product = generic_product
-                    product_name = "{} - {}".format(generic_product.name, line.get('title'))+' '+sku
+                    product_name = "{} - {}{}".format(generic_product.name,line.get('title'),(' ' + sku) if sku else '')
+                    
                     # No creamos mapping para el producto genérico, ya que es único en Odoo
             else:
                 product_name = line.get('title')
