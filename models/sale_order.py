@@ -251,8 +251,12 @@ class SaleOrder(models.Model):
 
     def import_shopify_orders(self, shopify_instance_ids, skip_existing_order, from_date, to_date):
         # Importa órdenes completas desde Shopify a Odoo
-        if shopify_instance_ids == False:
+        if not shopify_instance_ids:
             shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
+        if not shopify_instance_ids:
+            shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
+       
+       
         for shopify_instance_id in shopify_instance_ids:
             self.import_shopify_draft_orders(shopify_instance_id, skip_existing_order, from_date, to_date)
             # import shopify oders from shopify to odoo
@@ -294,11 +298,12 @@ class SaleOrder(models.Model):
                     _logger.info("Error: %s", response.status_code)
                     break
             if all_orders:
+                _logger.info(f"WSSH Found {len(all_orders)} para {shopify_instance_id.name}")
                 orders = self.create_shopify_order(all_orders, shopify_instance_id, skip_existing_order, status='open')
                 shopify_instance_id.shopify_last_date_order_import = fields.Datetime.now()
                 return orders
             else:
-                _logger.info("No orders found in shopify")
+                _logger.info(f"WSSH No orders found in shopify {shopify_instance_id.name}")
                 return []        
 
     def export_orders_to_shopify(self, shopify_instance_ids, update):
