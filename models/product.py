@@ -102,6 +102,11 @@ class ProductProduct(models.Model):
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
 
+    wholesale_price = fields.Float(
+        string='Precio Mayorista',
+        help='Precio especial para ventas al por mayor.',
+        digits='Product Price'
+    )
 
     def get_products_url(self, shopify_instance_id, endpoint):
         shop_url = "https://{}.myshopify.com/admin/api/{}/{}".format(shopify_instance_id.shopify_host,
@@ -795,12 +800,13 @@ class ProductTemplate(models.Model):
                 
     def _prepare_shopify_variant_data(self, variant, instance_id, template_attribute_value=None, is_color_split=False, is_update=False):
         """Prepara los datos de la variante para enviar a Shopify"""
+
         variant_data = {
-            "price": variant.lst_price,
+            "price": variant.product_tmpl_id.wholesale_price if not instance_id.prices_include_tax else variant.lst_price,
             "sku": variant.default_code or "",
             "barcode": variant.barcode or "",
             "inventory_management": "shopify"
-        }
+        }                
 
         if is_update:
             # Obtener el mapping de la variante para la instancia específica
