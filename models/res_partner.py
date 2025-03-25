@@ -173,6 +173,9 @@ class ResPartner(models.Model):
             _logger.warning("El teléfono '%s' no es válido y se omite en la búsqueda", phone)
             phone = None
 
+        if not email and not phone:
+            return None
+            
         # Buscar por email o phone en partners sin mapping para esta instancia
         domain = [('shopify_partner_map_ids', '=', False)]
         or_conditions = []
