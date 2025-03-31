@@ -85,3 +85,4 @@ class ShopifyOrderMap(models.Model):
          'UNIQUE(order_id, shopify_instance_id)', 
          'La combinación de Order y Shopify Instance debe ser única.')
     ]
+    
