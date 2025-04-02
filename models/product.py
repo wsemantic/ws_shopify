@@ -852,15 +852,18 @@ class ProductTemplate(models.Model):
                 variants = self.env['product.product'].search([('product_tmpl_id', 'in', products.ids)])
             else:
                 # Dominio original para stock.quants, según fecha y último ID exportado.
+                #usamos effective_export_date que es el mayor entre fecha escritura quant, y fecha creacion mapa stock
+                #porque entre la creacion de productos en odoo y la tarea de exportacion de prodcutos que crea el mapa de stock se ha podido colar la tarea de exportacion de stock,
+                #retrasando la ultima fecha de exportacion de stock saltandose los quant modificados
                 quant_domain = [
-                    ('write_date', '>=', shopify_instance.last_export_stock or '1900-01-01 00:00:00'),
+                    ('effective_export_date', '>=', shopify_instance.last_export_stock or '1900-01-01 00:00:00'),
                     ('id', '>', shopify_instance.last_export_stock_id or 0)
                 ]
                 if location.import_stock_warehouse_id:
                     quant_domain.append(('location_id', '=', location.import_stock_warehouse_id.id))
                 
                 # Buscar stock.quants con el orden apropiado
-                order = "write_date asc, id asc"
+                order = "effective_export_date asc, id asc"
                 if shopify_instance.last_export_stock_id > 0:
                     order = "id asc"
                     _logger.info("WSSH Continuando desde ID %s (timeout previo)", shopify_instance.last_export_stock_id)

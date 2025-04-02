@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # See LICENSE file for full copyright and licensing details.
 import logging
-from odoo import models, fields
+from odoo import api, models, fields
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,31 @@ class StockQuant(models.Model):
         help="Mappings to Shopify stock across multiple websites"
     )
     
+    effective_export_date = fields.Datetime(
+        string="Effective Export Date",
+        compute="_compute_effective_export_date",
+        store=True,  # Almacenado para optimizar búsquedas
+        help="Máximo entre write_date y la fecha de creación del mapa de stock asociado."
+    )
+    
+    @api.depends('write_date', 'shopify_stock_map_ids.create_date')
+    def _compute_effective_export_date(self):
+        for quant in self:
+            # Fecha inicial: write_date del quant
+            effective_date = quant.write_date or quant.create_date  # Fallback a create_date si write_date es None
+            # Buscar el mapa de stock relevante (puede haber múltiples mapas por producto)
+            if quant.shopify_stock_map_ids:
+                # Filtrar mapas que correspondan a la misma ubicación (si aplica)
+                relevant_maps = quant.shopify_stock_map_ids.filtered(
+                    lambda m: m.shopify_location_id.import_stock_warehouse_id == quant.location_id
+                )
+                if relevant_maps:
+                    # Tomar el create_date más reciente de los mapas relevantes
+                    map_create_date = max(relevant_maps.mapped('create_date'))
+                    if map_create_date and map_create_date > effective_date:
+                        effective_date = map_create_date
+            quant.effective_export_date = effective_date
+            
     def create_inventory_adjustment_ept(self, product_qty_data, location_id, auto_apply=False, name=""):
         
         quant_list = self.env['stock.quant']
