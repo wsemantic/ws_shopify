@@ -39,7 +39,7 @@ class StockQuant(models.Model):
                     # Obtener la fecha de creación más reciente de todos los mapas
                     map_create_date = max(all_maps.mapped('create_date'))
                     if map_create_date and map_create_date > effective_date:
-                        effective_date = map_create_date
+                        effective_date = map_create_date + datetime.timedelta(minutes=10)
 
             quant.effective_export_date = effective_date
 
