@@ -57,6 +57,21 @@ class ShopifyStockMapping(models.Model):
          'La combinación de Quant en Odoo y Shopify Location debe ser única.')
     ]    
     
+    @api.model
+    def create(self, vals):
+        # Crear el registro de shopify.stock.map
+        record = super(ShopifyStockMapping, self).create(vals)
+        # Obtener el stock.quant asociado al product_id (odoo_id) y la ubicación
+        if record.odoo_id:
+            quant_domain = [('product_id', '=', record.odoo_id.id)]
+            if record.shopify_location_id.import_stock_warehouse_id:
+                quant_domain.append(('location_id', '=', record.shopify_location_id.import_stock_warehouse_id.id))
+            quants = self.env['stock.quant'].search(quant_domain)
+            if quants:
+                # Forzar recálculo de effective_export_date
+                quants._compute_effective_export_date()
+        return record
+        
 class ShopifyPartnerMap(models.Model):
     _name = 'shopify.partner.map'
     _description = 'Shopify Partner Map'
