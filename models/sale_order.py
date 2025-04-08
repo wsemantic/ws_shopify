@@ -87,42 +87,67 @@ class SaleOrder(models.Model):
 
         return order_list   
 
-    def prepare_shopify_order_vals(self, shopify_instance_id, order, skip_existing_order):
-        # Prepara los valores para crear una orden de venta en Odoo
+     def prepare_shopify_order_vals(self, shopify_instance_id, order, skip_existing_order):
+        # Paso 1: Detectar si el pedido contiene un producto de "Recargo de Equivalencia"
+        apply_recargo_fiscal_position = False
+        for line in order.get('line_items', []):
+            product_name = line.get('title', '')
+            if re.search(r'-.*recargo.*equivalencia.*', product_name, re.IGNORECASE):
+                apply_recargo_fiscal_position = True
+                break  # No necesitamos seguir buscando
+    
+        # Procesar el cliente y preparar los valores del pedido
         if order.get('customer'):
             res_partner = self.env['res.partner'].get_or_create_partner_from_shopify(order.get('customer'), shopify_instance_id)
             if res_partner:
                 dt = parser.isoparse(order.get('created_at'))
-                # Convertir a UTC si es necesario:
-                dt_utc = dt.astimezone(utc)
+                                                  
+                dt_utc = dt.astimezone(utc)  # Convertir a UTC
                 date_order_value = fields.Datetime.to_string(dt_utc)
-                
+    
+                # Paso 2: Asignar la posición fiscal al cliente si aplica recargo
+                if apply_recargo_fiscal_position:
+                    fiscal_position = self.env.ref('l10n_es.1_fp_recargo')
+                    if fiscal_position:
+                        res_partner.property_account_position_id = fiscal_position.id
+                        _logger.info(f"WSSH Asignada posición fiscal de recargo al cliente {res_partner.name}")
+                    else:
+                        raise UserError(_(f"WSSH Posición fiscal de recargo no encontrada"))
+    
+                # Preparar valores para el pedido
                 sale_order_vals = {
                     'partner_id': res_partner.id,
                     'name': order.get('name'),
                     'create_date': date_order_value,
                     'date_order': date_order_value,
-                    'user_id': shopify_instance_id.salesperson_id.id if shopify_instance_id.salesperson_id else False,  # Asignar comercial
+                    'user_id': shopify_instance_id.salesperson_id.id if shopify_instance_id.salesperson_id else False,
                 }
-                                        
+    
+                # Crear el pedido
                 sale_order_rec = self.sudo().create(sale_order_vals)
-                sale_order_rec.sudo().write({
-                    'date_order': date_order_value,
-                })
-                _logger.info("WSSH fecha pedido %s", date_order_value)
+                                             
+                sale_order_rec.sudo().write({'date_order': date_order_value})
+                  
+                                                                      
                 sale_order_rec.state = 'draft'
-                # Se crea el registro en la clase mapa con los campos específicos de Shopify
+    
+                # Paso 3: Asignar la posición fiscal al pedido si aplica recargo
+                if apply_recargo_fiscal_position and fiscal_position:
+                    sale_order_rec.fiscal_position_id = fiscal_position.id
+                    _logger.info(f"WSSH Asignada posición fiscal de recargo al pedido {sale_order_rec.name}")
+    
+                # Crear el mapeo con Shopify
                 map_vals = {
                     'order_id': sale_order_rec.id,
                     'shopify_order_id': order.get('id'),
                     'shopify_instance_id': shopify_instance_id.id,
                 }
-                shopify_map = self.env['shopify.order.map'].sudo().create(map_vals)                
-                sale_order_rec.write({
-                    'shopify_order_map_ids': [(4, shopify_map.id)]
-                })
+                shopify_map = self.env['shopify.order.map'].sudo().create(map_vals)
+                sale_order_rec.write({'shopify_order_map_ids': [(4, shopify_map.id)]})
+    
+                # Procesar las líneas del pedido
                 self.create_shopify_order_line(sale_order_rec, order, skip_existing_order, shopify_instance_id)
-
+    
                 return sale_order_rec
                 
     def create_shopify_order_line(self, shopify_order_id, order, skip_existing_order, shopify_instance_id):
