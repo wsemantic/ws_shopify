@@ -87,7 +87,7 @@ class SaleOrder(models.Model):
 
         return order_list   
 
-     def prepare_shopify_order_vals(self, shopify_instance_id, order, skip_existing_order):
+    def prepare_shopify_order_vals(self, shopify_instance_id, order, skip_existing_order):
         # Paso 1: Detectar si el pedido contiene un producto de "Recargo de Equivalencia"
         apply_recargo_fiscal_position = False
         for line in order.get('line_items', []):
