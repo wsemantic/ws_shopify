@@ -93,7 +93,7 @@ class SaleOrder(models.Model):
         apply_recargo_fiscal_position = False
         for line in order.get('line_items', []):
             product_name = line.get('title', '')
-            if re.search(r'-.*recargo.*equivalencia.*', product_name, re.IGNORECASE):
+            if re.search(r'recargo.*equivalencia', product_name, re.IGNORECASE):
                 apply_recargo_fiscal_position = True
                 break  # No necesitamos seguir buscando
     
