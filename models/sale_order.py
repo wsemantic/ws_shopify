@@ -7,7 +7,6 @@ from pytz import utc
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
 import logging
-import re  # Añadido para usar expresiones regulares
 
 _logger = logging.getLogger(__name__)
 
@@ -155,62 +154,38 @@ class SaleOrder(models.Model):
                         tax = self.env['account.tax'].sudo().create(dict_tax)
                     if tax_line.get('price') != '0.00':
                         tax_list.append(tax.id)
-            # Obtener el nombre del producto desde Shopify
-            product_name = line.get('title')
-            # Comprobar si el nombre coincide con el patrón de "Recargo de Equivalencia"
-            if re.search(r'-.*recargo.*equivalencia.*', product_name, re.IGNORECASE):
-                # Buscar el producto por external ID
-                product = self.env.ref('shopify_recargo_equivalencia', raise_if_not_found=False)
-                if not product:
-                    # Crear el producto si no existe
-                    product = self.env['product.product'].sudo().create({
-                        'name': 'Recargo de Equivalencia',
-                        'type': 'service',  # Ajusta según sea necesario
-                        'default_code': 'RECARGO_EQ',
-                        # Añade otros campos necesarios según tu caso
-                    })
-                    # Asignar el external ID al producto creado
-                    self.env['ir.model.data'].sudo().create({
-                        'name': 'shopify_recargo_equivalencia',
-                        'module': 'shopify_connector',  # Ajusta al nombre de tu módulo
-                        'model': 'product.product',
-                        'res_id': product.id,
-                    })
-                    _logger.info("WSSH Producto 'Recargo de Equivalencia' creado con external ID 'shopify_recargo_equivalencia'")
+            product = self.env['product.product'].sudo().search([
+                ('shopify_variant_map_ids.web_variant_id', '=', line.get('variant_id')),
+                ('shopify_variant_map_ids.shopify_instance_id', '=', shopify_instance_id.id)
+            ], limit=1)
+            if not product:
+                # Intentar buscar por SKU (default_code) antes de usar el genérico
+                sku = line.get('sku') or ''
+                if sku:
+                    product_by_sku = self.env['product.product'].sudo().search([
+                        ('default_code', '=', sku)
+                    ], limit=1)
+                    if product_by_sku:
+                        # Verificar si existe un mapeo para este producto en la instancia actual
+                        product_map = product_by_sku.shopify_variant_map_ids.filtered(
+                            lambda m: m.shopify_instance_id == shopify_instance_id 
+                        )
+                        if product_map:
+                            product = product_by_sku
+                            product_name = line.get('title')+' '+sku
+                        else:
+                            # Si no hay mapeo, seguir con el genérico pero loguear la situación
+                            _logger.info(f"WSSH Producto encontrado por SKU {sku} pero sin mapeo para variant_id {line.get('variant_id')} en instancia {shopify_instance_id.name}")
+                if not product:  # Si no se encontró por SKU o no había SKU                            
+                    generic_product = self.env.ref('ws_shopify_split_color.product_generic', raise_if_not_found=False)
+                    if not generic_product:
+                        raise UserError(_(f"No se ha definido el producto {line.get('title')} {line.get('product_id')} variante {line.get('variant_id')}."))
+                    product = generic_product
+                    product_name = "{} - {}{}".format(generic_product.name,line.get('title'),(' ' + sku) if sku else '')
+                    
+                    # No creamos mapping para el producto genérico, ya que es único en Odoo
             else:
-                # Lógica original para buscar por variant_id, SKU, etc.
-                product = self.env['product.product'].sudo().search([
-                    ('shopify_variant_map_ids.web_variant_id', '=', line.get('variant_id')),
-                    ('shopify_variant_map_ids.shopify_instance_id', '=', shopify_instance_id.id)
-                ], limit=1)
-                if not product:
-                    # Intentar buscar por SKU (default_code) antes de usar el genérico
-                    sku = line.get('sku') or ''
-                    if sku:
-                        product_by_sku = self.env['product.product'].sudo().search([
-                            ('default_code', '=', sku)
-                        ], limit=1)
-                        if product_by_sku:
-                            # Verificar si existe un mapeo para este producto en la instancia actual
-                            product_map = product_by_sku.shopify_variant_map_ids.filtered(
-                                lambda m: m.shopify_instance_id == shopify_instance_id 
-                            )
-                            if product_map:
-                                product = product_by_sku
-                                product_name = line.get('title')+' '+sku
-                            else:
-                                # Si no hay mapeo, seguir con el genérico pero loguear la situación
-                                _logger.info(f"WSSH Producto encontrado por SKU {sk} pero sin mapeo para variant_id {line.get('variant_id')} en instancia {shopify_instance_id.name}")
-                    if not product:  # Si no se encontró por SKU o no había SKU                            
-                        generic_product = self.env.ref('ws_shopify_split_color.product_generic', raise_if_not_found=False)
-                        if not generic_product:
-                            raise UserError(_(f"No se ha definido el producto {line.get('title')} {line.get('product_id')} variante {line.get('variant_id')}."))
-                        product = generic_product
-                        product_name = "{} - {}{}".format(generic_product.name,line.get('title'),(' ' + sku) if sku else '')
-                        
-                        # No creamos mapping para el producto genérico, ya que es único en Odoo
-                else:
-                    product_name = line.get('title')
+                product_name = line.get('title')
                 
             if product:
                 # Precio recibido de Shopify (incluye IVA y descuento ya aplicado)
