@@ -7,6 +7,7 @@ from pytz import utc
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
 import logging
+import re
 
 _logger = logging.getLogger(__name__)
 
