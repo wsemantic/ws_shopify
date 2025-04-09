@@ -167,6 +167,9 @@ class SaleOrder(models.Model):
 
         dict_tax = {}
         for line in order.get('line_items'):
+            product_name = line.get('title', '')
+            if re.search(r'recargo.*equivalencia', product_name, re.IGNORECASE):
+                continue
             tax_list = []
             if line.get('tax_lines'):
                 for tax_line in line.get('tax_lines'):
