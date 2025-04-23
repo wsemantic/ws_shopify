@@ -243,9 +243,9 @@ class SaleOrder(models.Model):
         for lineship in order.get('shipping_lines'):
             price = round(float(lineship.get('price')) / 1.21, 2)
             if price > 0:
-                shipping = self.env['delivery.carrier'].sudo().search(
-                    [('name', '=', lineship.get('title')), ('shopify_web_id', '=', shopify_instance_id.id)], limit=1)
-                if not shipping:
+                delivery_product = self.env['product.product'].sudo().search(
+                    [('name', '=', lineship.get('title'))], limit=1)
+                if not delivery_product:
                     delivery_product = self.env['product.product'].sudo().create({
                         'name': shopify_instance_id.name + '.' + lineship.get('title'),
                         'detailed_type': 'product',
@@ -257,9 +257,9 @@ class SaleOrder(models.Model):
                         'product_id': delivery_product.id,
                     }
                     shipping = self.env['delivery.carrier'].sudo().create(vals)
-                if shipping and shipping.product_id:
+                if delivery_product:
                     shipping_vals = {
-                        'product_id': shipping.product_id.id,
+                        'product_id': delivery_product.id,
                         'name': "Shipping",
                         'price_unit': float(lineship.get('price')),
                         'order_id': shopify_order_id.id,
