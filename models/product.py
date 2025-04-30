@@ -951,100 +951,109 @@ class ProductTemplate(models.Model):
             })
             return updated_ids
 
+    # Dentro de la clase product.template heredada (ws_shopify.models.product)
+
     def _check_last_shopify_product_map(self, shopify_instance):
         """
-        Verifica si el último producto creado en Shopify por el conector
-        tiene un mapeo correspondiente en Odoo.
+        Verifica si el último producto *relevante* (con variantes y barcode)
+        creado en Shopify por el conector tiene un mapeo correspondiente en Odoo.
         """
-        _logger.info("WSSH Verificando mapeo del último producto creado en Shopify para instancia %s",
+        _logger.info("WSSH Verificando mapeo del último producto *relevante* (con barcode) creado en Shopify para instancia %s",
                      shopify_instance.name)
 
         try:
-            # 1. y 2. Llamar a la API de Shopify para obtener el último producto creado
-            # Asumiendo que shopify_instance tiene un método para hacer llamadas API
-            # Debes ajustar la URL del endpoint y los parámetros según la versión de la API
-            # y cómo tu conector maneja las llamadas (ej. usando requests directamente o un wrapper)
-            # Ejemplo usando un wrapper hipotético call_shopify_api:
+            # 1. Llamar a la API de Shopify para obtener los últimos N productos creados
+            # Aumentamos el límite para tener una muestra reciente
+            fetch_limit = 10 # Podrías ajustar este número
+
             response = shopify_instance.call_shopify_api(
                 method='GET',
                 endpoint='/admin/api/2021-10/products.json', # Revisa la versión de tu API
                 params={
                     'order': 'created_at desc',
-                    'limit': 1
+                    'limit': fetch_limit
                 }
             )
 
             if response.status_code != 200:
                 _logger.error(
-                    "WSSH Error al obtener el último producto de Shopify para instancia %s. "
+                    "WSSH Error al obtener los últimos %s productos de Shopify para instancia %s. "
                     "Código de estado: %s, Respuesta: %s",
-                    shopify_instance.name, response.status_code, response.text
+                    fetch_limit, shopify_instance.name, response.status_code, response.text
                 )
-                # Decide si abortar aquí o continuar con el check a pesar del error de API
-                # Por seguridad, quizás quieras abortar.
-                raise UserError(_("Error al conectar con Shopify para verificar el último producto."))
+                raise UserError(_(f"Error al conectar con Shopify para verificar los últimos productos ({shopify_instance.name})."))
 
             last_products_data = response.json().get('products')
 
             if not last_products_data:
-                _logger.info("WSSH No se encontraron productos en Shopify para la instancia %s. Procediendo...",
+                _logger.info("WSSH No se encontraron productos recientes en Shopify para la instancia %s. Procediendo...",
                              shopify_instance.name)
-                return True # No hay productos, no hay nada que verificar, se asume seguro proceder
+                return True # No hay productos recientes, no hay nada que verificar, se asume seguro proceder
 
-            # 3. Extraer el ID de Shopify
-            last_shopify_product = last_products_data[0]
-            last_shopify_product_id = str(last_shopify_product.get('id'))
+            # 2. Buscar el primer producto *relevante* (con variantes y barcode) dentro de los obtenidos
+            first_relevant_shopify_product = None
+            for shopify_product in last_products_data:
+                shopify_product_id = str(shopify_product.get('id'))
+                variants = shopify_product.get('variants', [])
 
-            _logger.info("WSSH Último producto encontrado en Shopify: ID %s (instancia %s)",
-                         last_shopify_product_id, shopify_instance.name)
+                # Criterio simplificado de relevancia:
+                # - Tiene variantes
+                # - Al menos una variante tiene código de barras (barcode)
+                has_variants_with_barcode = any(v.get('barcode') for v in variants)
 
-            # 4. Consultar las tablas de mapeo en Odoo
-            # Buscar en shopify.product.template.map (mapeo de template Odoo a Producto Shopify)
+                # Si cumple el criterio simplificado
+                if variants and has_variants_with_barcode:
+                     first_relevant_shopify_product = shopify_product
+                     _logger.info("WSSH Encontrado primer producto *relevante* (con barcode) en Shopify: ID %s (instancia %s)",
+                                  shopify_product_id, shopify_instance.name)
+                     break # Encontramos el más reciente relevante, salimos del bucle
+
+            if not first_relevant_shopify_product:
+                _logger.info("WSSH No se encontraron productos *relevantes* (con barcode) entre los últimos %s creados en Shopify para la instancia %s. Procediendo...",
+                             fetch_limit, shopify_instance.name)
+                return True # No se encontró ningún producto que parezca exportado por nosotros (según este criterio), se asume seguro proceder
+
+            # 3. Si se encontró un producto relevante, verificar su mapeo en Odoo
+            relevant_shopify_product_id = str(first_relevant_shopify_product.get('id'))
+
+            # Consultar las tablas de mapeo en Odoo (igual que antes)
             template_map = self.env['shopify.product.template.map'].search([
-                ('web_product_id', '=', last_shopify_product_id),
+                ('web_product_id', '=', relevant_shopify_product_id),
                 ('shopify_instance_id', '=', shopify_instance.id)
             ], limit=1)
 
             # Buscar en shopify.product.map (mapeo de Odoo attribute value/color a Producto Shopify)
-            # Ojo: este mapeo 'shopify.product.map' parece ser el que usas para el 2D->1D en el lado de Shopify Product
-            # Asegúrate de que el campo web_product_id en esta tabla es el ID del PRODUCTO de Shopify, no de la VARIANTE
             product_map = self.env['shopify.product.map'].search([
-                ('web_product_id', '=', last_shopify_product_id),
+                ('web_product_id', '=', relevant_shopify_product_id),
                 ('shopify_instance_id', '=', shopify_instance.id)
             ], limit=1)
 
-
-            # 5. Verificar si se encontró el mapeo
+            # 4. Verificar si se encontró el mapeo del producto relevante
             if not template_map and not product_map:
-                # ¡Problema detectado! Existe en Shopify pero no está mapeado en Odoo
+                # ¡Problema detectado! El último producto *relevante* (con barcode) en Shopify no está mapeado en Odoo
                 error_msg = (
-                    f"WSSH ¡ALERTA CRÍTICA! Se encontró el último producto creado en Shopify (ID: {last_shopify_product_id}) "
-                    f"para la instancia {shopify_instance.name}, PERO NO TIENE UN REGISTRO DE MAPEO EN ODOO "
-                    f"('shopify.product.template.map' ni 'shopify.product.map'). "
-                    "Esto indica una inconsistencia previa que podría llevar a duplicados. "
+                    f"WSSH ¡ALERTA CRÍTICA! Se encontró el último producto *relevante* (con barcode) creado en Shopify "
+                    f"(ID: {relevant_shopify_product_id}, Instancia: {shopify_instance.name}) PERO NO TIENE "
+                    f"UN REGISTRO DE MAPEO CORRESPONDIENTE EN ODOO ('shopify.product.template.map' ni 'shopify.product.map'). "
+                    "Esto indica una inconsistencia previa que podría llevar a duplicados de productos *con barcode*. "
                     "Se aborta la exportación de productos para esta instancia hasta corregir el mapeo."
                 )
                 _logger.error(error_msg)
-                # 6. Abortar la ejecución
-                # Lanzar una excepción detendrá la tarea cron para esta instancia
+                # Abortar la ejecución
                 raise UserError(_(error_msg))
-                # Nota: Alternativamente, podrías solo hacer un 'return' y manejar la lógica de aborto
-                # en el método llamador (export_products_to_shopify)
 
-            _logger.info("WSSH Mapeo encontrado para el último producto de Shopify (ID %s). Procediendo con la exportación...",
-                         last_shopify_product_id)
-            return True # Mapeo encontrado, continuar con la exportación
+            _logger.info("WSSH Mapeo encontrado para el último producto *relevante* (con barcode) de Shopify (ID %s). Procediendo con la exportación...",
+                         relevant_shopify_product_id)
+            return True # Mapeo del producto relevante encontrado, continuar con la exportación
 
         except Exception as e:
             # Captura cualquier otro error durante el proceso de verificación (ej. problemas de conexión, JSON inválido)
             _logger.error(
-                "WSSH Ocurrió un error inesperado durante la verificación del último producto de Shopify para instancia %s: %s",
-                shopify_instance.name, e, exc_info=True # exc_info=True graba la traza de la excepción
+                "WSSH Ocurrió un error inesperado durante la verificación inicial de mapeos con Shopify para instancia %s: %s",
+                shopify_instance.name, e, exc_info=True
             )
-            # Decide si abortar por cualquier error en la verificación o solo por mapeo faltante
-            # Abortar aquí es más seguro si la verificación no se pudo completar.
-            raise UserError(_(f"Fallo en la verificación inicial de mapeos con Shopify ({shopify_instance.name})."))
-    
+            # Es seguro abortar aquí si la verificación no se pudo completar
+            raise UserError(_(f"Fallo inesperado en la verificación inicial de mapeos con Shopify ({shopify_instance.name}). Revise los logs para más detalles."))
 
 # inherit class product.attribute and add fields for shopify
 class ProductAttribute(models.Model):
