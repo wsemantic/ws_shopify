@@ -167,107 +167,118 @@ class ProductTemplate(models.Model):
                 return []
 
     def _process_imported_products(self, shopify_products, shopify_instance_id, skip_existing_products):
-      product_list = []
-      for shopify_product in shopify_products:
-          _logger.info("WSSH Processing Shopify product ID: %s", shopify_product.get('id'))
-          shopify_product_id = shopify_product.get('id')
-          
-          # Cambio: Verificar si la instancia usa split por color
-          split_by_color = shopify_instance_id.split_products_by_color
-          
-          if split_by_color:
-              # Buscar si el producto ya existe en Odoo por shopify_product_id en product.template.attribute.value          
-              existing_attribute_value = self.env['product.template.attribute.value'].sudo().search([
-                  ('shopify_product_map_ids.web_product_id', '=', shopify_product_id),
-                  ('shopify_product_map_ids.shopify_instance_id', '=', shopify_instance_id.id),
-              ], limit=1)
-              
-              if existing_attribute_value:
-                  # Si el producto ya existe, no hacer nada
-                  _logger.info(f"WSSH Product with Shopify ID {shopify_product_id} already exists in Odoo for instance {shopify_instance_id.name}.")
-                  product_list.append(existing_attribute_value.product_tmpl_id.id)
-                  continue
-          else:
-              # Cambio: Buscar en shopify.product.template.map para modo sin split
-              existing_template_map = self.env['shopify.product.template.map'].sudo().search([
-                  ('web_product_id', '=', shopify_product_id),
-                  ('shopify_instance_id', '=', shopify_instance_id.id),
-              ], limit=1)
-              if existing_template_map:
-                  _logger.info(f"WSSH Product with Shopify ID {shopify_product_id} already exists in Odoo for instance {shopify_instance_id.name}.")
-                  product_list.append(existing_template_map.odoo_id.id)
-                  continue
-          
-          # Si no existe, buscar por las variantes (shopify_variant_id o default_code)
-          for variant in shopify_product.get('variants', []):
-              shopify_variant_id = variant.get('id')
-              sku = variant.get('sku')
-              _logger.info(f"WSSH iterando variant {sku}")
-              # Buscar por shopify_variant_id o default_code (SKU)
-              existing_variant = self.env['product.product'].sudo().search([
-                  '|',
-                  ('shopify_variant_map_ids.web_variant_id', '=', shopify_variant_id),
-                  '|',
-                  ('default_code', '=', sku),
-                  ('barcode', '=', variant.get('barcode')),
-              ], limit=1)
-              
-              if existing_variant:
-                  if split_by_color:
-                      # Filtramos los valores de atributo cuyo atributo sea "color"
-                      color_values = existing_variant.product_template_attribute_value_ids.filtered(
-                          lambda v: v.attribute_id.name.lower() == 'color'
-                      )
-                      if color_values:
-                          color_map = color_values.shopify_product_map_ids.filtered(
-                              lambda m: m.shopify_instance_id == shopify_instance_id)
-                          if not color_map:
-                              self.env['shopify.product.map'].create({
-                                  'web_product_id': shopify_product_id,
-                                  'odoo_id': color_values[0].id,
-                                  'shopify_instance_id': shopify_instance_id.id,
-                              })
-                          elif color_map.web_product_id != shopify_product_id:
-                              color_map.write({'web_product_id': shopify_product_id})
-                          for template_value in color_values:
-                              _logger.info(f"WSSH Updated color attribute value {template_value.name} with Shopify ID {shopify_product_id} for instance {shopify_instance_id.name}.")                           
-                  else:
-                      # Cambio: Crear o actualizar mapa para product.template en modo sin split
-                      template_map = self.env['shopify.product.template.map'].sudo().search([
-                          ('odoo_id', '=', existing_variant.product_tmpl_id.id),
-                          ('shopify_instance_id', '=', shopify_instance_id.id),
-                      ], limit=1)
-                      if not template_map:
-                          self.env['shopify.product.template.map'].create({
-                              'web_product_id': shopify_product_id,
-                              'odoo_id': existing_variant.product_tmpl_id.id,
-                              'shopify_instance_id': shopify_instance_id.id,
-                          })
-                      elif template_map.web_product_id != shopify_product_id:
-                          template_map.write({'web_product_id': shopify_product_id})
-                  
-                  # Verificar si existe el mapping de variante para el producto
-                  variant_map = existing_variant.shopify_variant_map_ids.filtered(
-                      lambda m: m.shopify_instance_id == shopify_instance_id)
-                  if not variant_map:
-                      # Si no existe, aprovechamos el método ya existente para crear tanto
-                      # el mapping de variante como el de stock.
-                      self._update_variant_ids([existing_variant], shopify_product.get('variants', []), shopify_instance_id)
-    
-                  _logger.info(f"WSSH Updated existing product template {existing_variant.product_tmpl_id.name} with Shopify ID {shopify_product_id}.")
-                  product_list.append(existing_variant.product_tmpl_id.id)
-              else:
-                  _logger.info("WSSH No matching product found for Shopify Variant ID: %s or SKU: %s", shopify_variant_id, sku)
-          else:
-              # Si no se encuentra el producto ni sus variantes, crear el producto en Odoo
-              if not skip_existing_products:
-                  _logger.info(f"WSSH Creando producto ")
-                  # Cambio: Pasar split_by_color al método de creación
-                  #product_template = self._create_product_from_shopify(shopify_product, shopify_instance_id, split_by_color)
-                  #if product_template:
-                  #    product_list.append(product_template.id)
+        product_list = []
+        for shopify_product in shopify_products:
+            _logger.info("WSSH Processing Shopify product ID: %s", shopify_product.get('id'))
+            shopify_product_id = shopify_product.get('id')
+            
+            # Cambio: Verificar si la instancia usa split por color
+            split_by_color = shopify_instance_id.split_products_by_color
+            
+            if split_by_color:
+                # Buscar si el producto ya existe en Odoo por shopify_product_id en product.template.attribute.value          
+                existing_attribute_value = self.env['product.template.attribute.value'].sudo().search([
+                    ('shopify_product_map_ids.web_product_id', '=', shopify_product_id),
+                    ('shopify_product_map_ids.shopify_instance_id', '=', shopify_instance_id.id),
+                ], limit=1)
+                
+                if existing_attribute_value:
+                    # Si el producto ya existe, no hacer nada
+                    _logger.info(f"WSSH Product with Shopify ID {shopify_product_id} already exists in Odoo for instance {shopify_instance_id.name}.")
+                    product_list.append(existing_attribute_value.product_tmpl_id.id)
+                    continue
+            else:
+                # Cambio: Buscar en shopify.product.template.map para modo sin split
+                existing_template_map = self.env['shopify.product.template.map'].sudo().search([
+                    ('web_product_id', '=', shopify_product_id),
+                    ('shopify_instance_id', '=', shopify_instance_id.id),
+                ], limit=1)
+                if existing_template_map:
+                    _logger.info(f"WSSH Product with Shopify ID {shopify_product_id} already exists in Odoo for instance {shopify_instance_id.name}.")
+                    product_list.append(existing_template_map.odoo_id.id)
+                    continue
+            
+            # Si no existe, buscar por las variantes (shopify_variant_id o default_code)
+            for variant in shopify_product.get('variants', []):
+                shopify_variant_id = variant.get('id')
+
+                final_search_domain = [('type', '=', 'product')]
+
+                if sku_value or barcode_value:
+                    final_search_domain.append('|')
+                    
+                final_search_domain.append(('shopify_variant_map_ids.web_variant_id', '=', shopify_variant_id))
+
+                if sku_value and barcode_value:
+                    final_search_domain.append('|')
+                
+                if sku_value:
+                    final_search_domain.append(('default_code', '=', sku_value))
+                    
+                if barcode_value:
+                    final_search_domain.append(('barcode', '=', barcode_value))
+
+                _logger.info(f"WSSH Final search domain for variant ID {shopify_variant_id}: {final_search_domain}")
+
+                # Buscar por las condiciones construidas
+                existing_variant = self.env['product.product'].sudo().search(final_search_domain, limit=1)
+                
+                if existing_variant:
+                    if split_by_color:
+                        # Filtramos los valores de atributo cuyo atributo sea "color"
+                        color_values = existing_variant.product_template_attribute_value_ids.filtered(
+                            lambda v: v.attribute_id.name.lower() == 'color'
+                        )
+                        if color_values:
+                            color_map = color_values.shopify_product_map_ids.filtered(
+                                lambda m: m.shopify_instance_id == shopify_instance_id)
+                            if not color_map:
+                                self.env['shopify.product.map'].create({
+                                    'web_product_id': shopify_product_id,
+                                    'odoo_id': color_values[0].id,
+                                    'shopify_instance_id': shopify_instance_id.id,
+                                })
+                            elif color_map.web_product_id != shopify_product_id:
+                                color_map.write({'web_product_id': shopify_product_id})
+                            for template_value in color_values:
+                                _logger.info(f"WSSH Updated color attribute value {template_value.name} with Shopify ID {shopify_product_id} for instance {shopify_instance_id.name}.")                           
+                    else:
+                        # Cambio: Crear o actualizar mapa para product.template en modo sin split
+                        template_map = self.env['shopify.product.template.map'].sudo().search([
+                            ('odoo_id', '=', existing_variant.product_tmpl_id.id),
+                            ('shopify_instance_id', '=', shopify_instance_id.id),
+                        ], limit=1)
+                        if not template_map:
+                            self.env['shopify.product.template.map'].create({
+                                'web_product_id': shopify_product_id,
+                                'odoo_id': existing_variant.product_tmpl_id.id,
+                                'shopify_instance_id': shopify_instance_id.id,
+                            })
+                        elif template_map.web_product_id != shopify_product_id:
+                            template_map.write({'web_product_id': shopify_product_id})
+                    
+                    # Verificar si existe el mapping de variante para el producto
+                    variant_map = existing_variant.shopify_variant_map_ids.filtered(
+                        lambda m: m.shopify_instance_id == shopify_instance_id)
+                    if not variant_map:
+                        # Si no existe, aprovechamos el método ya existente para crear tanto
+                        # el mapping de variante como el de stock.
+                        self._update_variant_ids([existing_variant], shopify_product.get('variants', []), shopify_instance_id)
       
-      return product_list
+                    _logger.info(f"WSSH Updated existing product template {existing_variant.product_tmpl_id.name} with Shopify ID {shopify_product_id}.")
+                    product_list.append(existing_variant.product_tmpl_id.id)
+                else:
+                    _logger.info("WSSH No matching product found for Shopify Variant ID: %s or SKU: %s", shopify_variant_id, sku)
+            else:
+                # Si no se encuentra el producto ni sus variantes, crear el producto en Odoo
+                if not skip_existing_products:
+                    _logger.info(f"WSSH Creando producto ")
+                    # Cambio: Pasar split_by_color al método de creación
+                    #product_template = self._create_product_from_shopify(shopify_product, shopify_instance_id, split_by_color)
+                    #if product_template:
+                    #    product_list.append(product_template.id)
+        
+        return product_list
 
     def _create_product_from_shopify(self, shopify_product, shopify_instance_id, split_by_color=False):  # Cambio: Añadir parámetro split_by_color
         """Crea un producto en Odoo a partir de un producto de Shopify."""
