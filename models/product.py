@@ -204,6 +204,9 @@ class ProductTemplate(models.Model):
 
                 final_search_domain = [('type', '=', 'product')]
 
+                sku_value = variant.get('sku')
+                barcode_value = variant.get('barcode')
+                
                 if sku_value or barcode_value:
                     final_search_domain.append('|')
                     
