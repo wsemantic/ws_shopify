@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # See LICENSE file for full copyright and licensing details.
 import logging
+import datetime
 from odoo import api, models, fields
 
 logger = logging.getLogger(__name__)
