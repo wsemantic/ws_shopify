@@ -62,6 +62,10 @@ class ResPartner(models.Model):
             _logger.info("WSSH Found %d customers to import for instance %s", len(all_customers), shopify_instance_id.name)
             
             if all_customers:
+                # Obtener metafields para cada cliente
+                for customer in all_customers:
+                    customer['metafields'] = self.get_customer_metafields(customer.get('id'), shopify_instance_id)
+                
                 customer_ids = self.create_customers(all_customers, shopify_instance_id, skip_existing_customer)
                 shopify_instance_id.shopify_last_date_customer_import = fields.Datetime.now()
                 return customer_ids
@@ -72,11 +76,30 @@ class ResPartner(models.Model):
     def get_customer_url(self, shopify_instance_id, endpoint):
         return f"https://{shopify_instance_id.shopify_host}.myshopify.com/admin/api/{shopify_instance_id.shopify_version}/{endpoint}"
 
+    def get_customer_metafields(self, customer_id, shopify_instance_id):
+        """Obtiene los metafields de un cliente específico"""
+        if not customer_id:
+            return {}
+            
+        url = self.get_customer_url(shopify_instance_id, endpoint=f'customers/{customer_id}/metafields.json')
+        headers = {"X-Shopify-Access-Token": shopify_instance_id.shopify_shared_secret}
+        
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200 and response.content:
+            metafields_data = response.json().get('metafields', [])
+            metafields = {}
+            for field in metafields_data:
+                if field.get('namespace') == 'custom':
+                    metafields[field.get('key')] = field.get('value')
+            return metafields
+        return {}
+
     def prepare_customer_vals(self, shopify_customer, shopify_instance_id):
         """Prepara los valores para crear o actualizar un cliente."""
                                                   
         addresses = shopify_customer.get('default_address', {})
         first_address = addresses
+        metafields = shopify_customer.get('metafields', {})
                                                                              
         first_name = shopify_customer.get('first_name') or first_address.get('first_name') or ''
         last_name = shopify_customer.get('last_name') or first_address.get('last_name') or ''
@@ -96,7 +119,7 @@ class ResPartner(models.Model):
             'customer_rank': 1,
             'email': email,
             'phone': phone,
-            'ref': 'SID' + str(shopify_customer.get('id')),
+            'ref': metafields.get('ref') or ('SID' + str(shopify_customer.get('id'))),
             'street': street,
             'street2': street2,
             'city': city,
@@ -104,6 +127,11 @@ class ResPartner(models.Model):
             'country_id': country_id,
             'user_id': shopify_instance_id.salesperson_id.id if shopify_instance_id.salesperson_id else False,  # Asignar comercial
         }
+        
+        # Añadir metafields adicionales
+        if 'vat' in metafields:
+            vals['vat'] = metafields.get('vat')
+            
         return vals
 
     def create_customers(self, shopify_customers, shopify_instance_id, skip_existing_customer):
@@ -150,9 +178,7 @@ class ResPartner(models.Model):
         shopify_customer_id = shopify_customer.get('id')
         addresses = shopify_customer.get('default_address', {})
         first_address = addresses 
-
-        email = shopify_customer.get('email') or first_address.get('email')
-        phone = shopify_customer.get('phone') or first_address.get('phone')
+        metafields = shopify_customer.get('metafields', {})
 
         # Buscar por mapping en shopify_partner_map_ids
         partner = self.env['res.partner'].search([
@@ -161,6 +187,11 @@ class ResPartner(models.Model):
         ], limit=1)
         if partner:
             return partner
+
+        # Obtener datos para búsqueda por prioridad
+        ref_value = metafields.get('ref')
+        email = shopify_customer.get('email') or first_address.get('email')
+        phone = shopify_customer.get('phone') or first_address.get('phone')
 
         # Limpiar y validar campos
         if email: email = shopify_instance_id.clean_string(email)
@@ -173,19 +204,20 @@ class ResPartner(models.Model):
             _logger.warning("El teléfono '%s' no es válido y se omite en la búsqueda", phone)
             phone = None
 
-        if not email and not phone:
-            return None
-            
-        # Buscar por email o phone en partners sin mapping para esta instancia
-        domain = [('shopify_partner_map_ids', '=', False)]
+        # Construir dominio de búsqueda por orden de prioridad: ref, email, phone
         or_conditions = []
+        if ref_value: or_conditions.append(('ref', '=', ref_value))
         if email: or_conditions.append(('email', '=', email))
         if phone: or_conditions.append(('phone', '=', phone))
 
-        if len(or_conditions) == 1:
-            domain += or_conditions
-        elif len(or_conditions) > 1:
-            domain += ['|'] * (len(or_conditions) - 1) + or_conditions
+        if not or_conditions:
+            return None
+        
+        # Construir el OR completo
+        domain = []
+        if len(or_conditions) > 1:
+            domain = ['|'] * (len(or_conditions) - 1)
+        domain.extend(or_conditions)
         
         return self.search(domain, limit=1)
 
@@ -199,6 +231,10 @@ class ResPartner(models.Model):
 
     def get_or_create_partner_from_shopify(self, shopify_customer, shopify_instance_id):
         """Busca o crea un partner basado en datos de Shopify, reutilizable desde sale.order."""
+        # Obtener metafields si no existen
+        if 'metafields' not in shopify_customer:
+            shopify_customer['metafields'] = self.get_customer_metafields(shopify_customer.get('id'), shopify_instance_id)
+            
         partner = self._find_existing_partner(shopify_customer, shopify_instance_id)
         if not partner:
             vals = self.prepare_customer_vals(shopify_customer, shopify_instance_id)
@@ -277,11 +313,56 @@ class ResPartner(models.Model):
                                 'shopify_partner_id': shopify_customer.get('id'),
                                 'shopify_instance_id': instance_id.id,
                             })
+                        
+                        # Exportar metafields del cliente
+                        if partner.ref or partner.vat:
+                            self._export_partner_metafields(partner, shopify_customer.get('id'), instance_id)
+                            
                         _logger.info("WSSH Customer created/updated successfully: %s", partner.name)
                 else:
                     _logger.error("WSSH Customer creation/update failed: %s", response.text if response else "No response")
 
             instance_id.last_export_customer = fields.Datetime.now()
+
+    def _export_partner_metafields(self, partner, shopify_customer_id, instance_id):
+        """Exporta los metafields de un partner a Shopify"""
+        if not shopify_customer_id:
+            return
+            
+        headers = {
+            "X-Shopify-Access-Token": instance_id.shopify_shared_secret,
+            "Content-Type": "application/json"
+        }
+        
+        metafields = []
+        
+        # Añadir ref como metafield
+        if partner.ref and not partner.ref.startswith('SID'):
+            metafields.append({
+                "namespace": "custom",
+                "key": "ref",
+                "value": partner.ref,
+                "type": "number_integer" if partner.ref.isdigit() else "single_line_text_field"
+            })
+            
+        # Añadir vat como metafield
+        if partner.vat:
+            metafields.append({
+                "namespace": "custom",
+                "key": "vat",
+                "value": partner.vat,
+                "type": "single_line_text_field"
+            })
+            
+        # Exportar metafields
+        for metafield in metafields:
+            url = self.get_customer_url(instance_id, endpoint=f'customers/{shopify_customer_id}/metafields.json')
+            data = {"metafield": metafield}
+            
+            response = requests.post(url, headers=headers, data=json.dumps(data))
+            if not response or not response.ok:
+                _logger.error("WSSH Metafield export failed: %s - %s", metafield.get('key'), 
+                              response.text if response else "No response")
 
     def action_open_export_customer_to_shopify(self):
         return {
