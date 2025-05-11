@@ -91,6 +91,7 @@ class ResPartner(models.Model):
             for field in metafields_data:
                 if field.get('namespace') == 'custom':
                     metafields[field.get('key')] = field.get('value')
+                    _logger.info(f"WSSH Metafield {field.get('key')} {field.get('value')}")
             return metafields
         return {}
 
@@ -190,6 +191,7 @@ class ResPartner(models.Model):
 
         # Obtener datos para búsqueda por prioridad
         ref_value = metafields.get('ref')
+        _logger.info(f"WSSH Find Partner REF {ref_value}")
         email = shopify_customer.get('email') or first_address.get('email')
         phone = shopify_customer.get('phone') or first_address.get('phone')
 
