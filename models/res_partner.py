@@ -90,8 +90,12 @@ class ResPartner(models.Model):
             metafields = {}
             for field in metafields_data:
                 if field.get('namespace') == 'custom':
-                    metafields[field.get('key')] = field.get('value')
-                    _logger.info(f"WSSH Metafield {field.get('key')} {field.get('value')}")
+                    key=field.get('key')
+                    if 'referencia' in key:
+                        key='ref'
+                    value=field.get('value')
+                    metafields[key] = value
+                    _logger.info(f"WSSH Metafield {key} {value}")
             return metafields
         return {}
 
