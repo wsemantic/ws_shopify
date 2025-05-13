@@ -47,7 +47,7 @@ def get_size_value(size):
     # Manejar tallas como "2XL" o "3XS"
     match = re.match(r'(\d+)X([SLM])', size)
     if match:
-        _logger.info("WSSH get_size_value Fallback Match {size}")
+        _logger.info(f"WSSH get_size_value Fallback Match {size}")
         num_x = int(match.group(1))
         base_size = match.group(2)
         if base_size == 'S':
@@ -61,7 +61,7 @@ def get_size_value(size):
     try:
         return (0, float(size))  # Prioridad numérica, valor numérico
     except ValueError:
-        _logger.info("WSSH get_size_value Excepcion {size}")
+        _logger.info(f"WSSH get_size_value Excepcion {size}")
         return (1, size.lower())  # Prioridad alfabética, cadena en minúsculas
 
 class ProductTemplateAttributeValue(models.Model):
@@ -495,7 +495,7 @@ class ProductTemplate(models.Model):
                 self._check_last_shopify_product_map(instance_id)
             except UserError as e:
                 # Si _check_last_shopify_product_map lanza UserError, no continuar con la exportación
-                _logger.error(f"WSSH Exportación de productos abortada para instancia {shopify_instance.name} debido a fallo en verificación inicial.")
+                _logger.error(f"WSSH Exportación de productos abortada para instancia {instance_id.name} debido a fallo en verificación inicial.")
                 # Puedes decidir relanzar e, o simplemente loguear y salir si el UserError ya es suficiente.
                 # relanzar e
                 return # Salir del método para esta instancia
@@ -654,7 +654,7 @@ class ProductTemplate(models.Model):
                     break                                                                                                      
                 
             # Actualizar la fecha de la última exportación
-            instance_id.last_export_product = export_update_time
+            self.write_with_retry(instance_id, 'last_export_product', export_update_time)
             
     def _update_shopify_variant(self, variant, instance_id, headers):
         if not variant.barcode:
@@ -947,7 +947,7 @@ class ProductTemplate(models.Model):
                     updated_ids.append(variant.id)
                     # Actualizar shopify_instance tras cada éxito con el ID del quant
                     if quant:
-                        shopify_instance.write({'last_export_stock_id': quant.id})
+                        self.write_with_retry(shopify_instance, 'last_export_stock_id', quant.id)
                 else:
                     _logger.warning("WSSH Failed to update stock for product %s (variant %s): %s en instancia %s",
                                     variant.product_tmpl_id.name, variant.name, response.text, shopify_instance.name)
@@ -960,15 +960,11 @@ class ProductTemplate(models.Model):
             
             # Si se procesan todos los productos, actualizar a la fecha actual
             _logger.info("WSSH Update stock final completo para %s", shopify_instance.name)
-            shopify_instance.write({
-                'last_export_stock': fields.Datetime.now(),
-                'last_export_stock_id': 0
-            })
+            self.write_with_retry(shopify_instance, 'last_export_stock', fields.Datetime.now())
+            self.write_with_retry(shopify_instance, 'last_export_stock_id', 0)
             return updated_ids
 
     # Dentro de la clase product.template heredada (ws_shopify.models.product)
-
-# Dentro de la clase product.template heredada (ws_shopify.models.product)
 
     def _check_last_shopify_product_map(self, shopify_instance):
         """
@@ -1100,6 +1096,32 @@ class ProductTemplate(models.Model):
             )
             raise UserError(_(f"Fallo inesperado en la verificación inicial de mapeos con Shopify ({shopify_instance.name}). Revise los logs."))
 
+    def write_with_retry(self, record, field_name, value):
+        """
+        Escribe un valor en un campo de un registro con reintentos en caso de SerializationFailure.
+        
+        :param record: Registro en el que se escribirá (ej. shopify.web)
+        :param field_name: Nombre del campo a actualizar (ej. 'last_export_product')
+        :param value: Valor a escribir en el campo
+        """
+        from psycopg2 import errors
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                self.env.cr.execute("BEGIN")
+                record.write({field_name: value})
+                self.env.cr.commit()
+                _logger.info(f"WSSH Successfully wrote {field_name}={value} to record {record._name} (ID: {record.id})")
+                return
+            except errors.SerializationFailure as e:
+                self.env.cr.rollback()
+                if attempt < max_retries - 1:
+                    _logger.warning(f"WSSH Serialization failure when writing {field_name}, retrying {attempt + 1}/{max_retries}")
+                    time.sleep(5)
+                    continue
+                _logger.error(f"WSSH Failed to write {field_name} after {max_retries} retries: {str(e)}")
+                raise UserError(f"Error de concurrencia persistente al escribir {field_name}: {str(e)}")
+
 # inherit class product.attribute and add fields for shopify
 class ProductAttribute(models.Model):
     _inherit = 'product.attribute'
@@ -1116,5 +1138,3 @@ class ProductAttributeValue(models.Model):
     is_shopify = fields.Boolean(string='Is Shopify?')
     shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance')
     shopify_id = fields.Char(string='Shopify Attribute Value Id')
-    
-    
