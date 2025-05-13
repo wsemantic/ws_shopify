@@ -743,9 +743,6 @@ class ProductTemplate(models.Model):
                 shopify_variants = shopify_product.get('variants', [])
                 self._update_variant_ids(product.product_variant_ids, shopify_variants, instance_id)
 
-                product.is_shopify_product = True
-                product.shopify_instance_id = instance_id.id
-                product.is_exported = True
                 #_logger.info(f"WSSH Successfully exported product {product.name}")
         else:
             _logger.error(f"WSSH Error exporting product: {response.text}")
