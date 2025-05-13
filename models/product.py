@@ -483,7 +483,7 @@ class ProductTemplate(models.Model):
         color_attribute = None
         for attr in self.env['product.attribute'].search([]):
             if attr.name and attr.name.lower().find('color') != -1:
-                color_attribute = attr
+                color_attribute = attr.name
                 break
                 
         if not shopify_instance_ids:
@@ -687,14 +687,17 @@ class ProductTemplate(models.Model):
 
         product_data = {
             "product": {
-                "title": product.name,
-                "body_html": product.description or "",
-                "tags": ','.join(tag.name for tag in product.product_tag_ids)
+                "price": product.wholesale_price if not instance_id.prices_include_tax else product.lst_price
             }
         }
+        
+        if not update:
+            product_data["product"]["title"] = product.name
+            product_data["product"]["body_html"] = product.description or ""
+            product_data["product"]["tags"] = ','.join(tag.name for tag in product.product_tag_ids)
 
         # Añadir opciones si hay atributos
-        if product.attribute_line_ids:
+        if product.attribute_line_ids and not update:
             options = []
             for idx, attr_line in enumerate(product.attribute_line_ids, 1):
                 if idx <= 3:
@@ -834,20 +837,21 @@ class ProductTemplate(models.Model):
             variant_map = variant.shopify_variant_map_ids.filtered(lambda m: m.shopify_instance_id == instance_id)
             if variant_map and variant_map.web_variant_id:
                 variant_data["id"] = variant_map.web_variant_id
-
-        if is_color_split and template_attribute_value:
-            # Si estamos separando por colores, solo usamos el atributo talla
-            size_option_key = f"option{instance_id.size_option_position}"
-            color_option_key = f"option{instance_id.color_option_position}"
-            
-            variant_data[color_option_key] = template_attribute_value.name if is_color_split and template_attribute_value else ""
-            size_value = variant.product_template_attribute_value_ids.filtered(lambda v: v.attribute_id.name.lower() != 'color')
-            variant_data[size_option_key] = size_value.name if size_value else "Default"
         else:
-            # Caso normal - todos los atributos
-            for idx, attr_val in enumerate(variant.product_template_attribute_value_ids, 1):
-                if idx <= 3:  # Shopify solo permite 3 opciones
-                    variant_data[f"option{idx}"] = attr_val.name
+            #de momento no se actualizan atributos tras la creacion
+            if is_color_split and template_attribute_value:
+                # Si estamos separando por colores, solo usamos el atributo talla
+                size_option_key = f"option{instance_id.size_option_position}"
+                color_option_key = f"option{instance_id.color_option_position}"
+            
+                variant_data[color_option_key] = template_attribute_value.name if is_color_split and template_attribute_value else ""
+                size_value = variant.product_template_attribute_value_ids.filtered(lambda v: v.attribute_id.name.lower() != 'color')
+                variant_data[size_option_key] = size_value.name if size_value else "Default"
+            else:
+                # Caso normal - todos los atributos
+                for idx, attr_val in enumerate(variant.product_template_attribute_value_ids, 1):
+                    if idx <= 3:  # Shopify solo permite 3 opciones
+                        variant_data[f"option{idx}"] = attr_val.name
 
         return variant_data
         
