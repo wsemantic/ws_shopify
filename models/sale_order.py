@@ -205,14 +205,19 @@ class SaleOrder(models.Model):
                         else:
                             # Si no hay mapeo, seguir con el genérico pero loguear la situación
                             _logger.info(f"WSSH Producto encontrado por SKU {sku} pero sin mapeo para variant_id {line.get('variant_id')} en instancia {shopify_instance_id.name}")
-                if not product:  # Si no se encontró por SKU o no había SKU                            
-                    generic_product = self.env.ref('ws_shopify_split_color.product_generic', raise_if_not_found=False)
-                    if not generic_product:
-                        raise UserError(_(f"No se ha definido el producto {line.get('title')} {line.get('product_id')} variante {line.get('variant_id')}."))
-                    product = generic_product
-                    product_name = "{} - {}{}".format(generic_product.name,line.get('title'),(' ' + sku) if sku else '')
+                if not product:
+                    # Buscar/crear por nombre si no se encontró por SKU
+                    product_by_name = self.env['product.product'].sudo().search([
+                        ('name', '=', line.get('title'))
+                    ], limit=1)
                     
-                    # No creamos mapping para el producto genérico, ya que es único en Odoo
+                    if product_by_name:
+                        product = product_by_name
+                        product_name = line.get('title')
+                    else:
+                        # Si no existe, crear el producto
+                        product = self._create_or_get_product(line.get('title'), sku, 'product')
+                        product_name = line.get('title')
             else:
                 product_name = line.get('title')
                 
@@ -246,17 +251,8 @@ class SaleOrder(models.Model):
                 delivery_product = self.env['product.product'].sudo().search(
                     [('name', '=', lineship.get('title'))], limit=1)
                 if not delivery_product:
-                    delivery_product = self.env['product.product'].sudo().create({
-                        'name': shopify_instance_id.name + '.' + lineship.get('title'),
-                        'detailed_type': 'product',
-                    })
-                    vals = {
-                        'is_shopify': True,
-                        'shopify_web_id': shopify_instance_id.id,
-                        'name': lineship.get('title'),
-                        'product_id': delivery_product.id,
-                    }
-                    shipping = self.env['delivery.carrier'].sudo().create(vals)
+                    delivery_product = self._create_or_get_product(lineship.get('title'), '', 'shipping')
+                
                 if delivery_product:
                     shipping_vals = {
                         'product_id': delivery_product.id,
@@ -268,6 +264,42 @@ class SaleOrder(models.Model):
                     self.env['sale.order.line'].sudo().create(shipping_vals)
 
         return True
+        
+    def _create_or_get_product(self, name, sku='', product_type='product'):
+        """
+        Centraliza la creación de productos tanto para líneas de pedido como para gastos de envío
+        
+        Args:
+            name: Nombre del producto
+            sku: Código SKU (opcional)
+            product_type: Tipo de producto ('product' o 'shipping')
+            
+        Returns:
+            product.product: El producto creado o encontrado
+        """
+        product_vals = {
+            'name': name,
+            'detailed_type': 'product',
+        }
+        
+        if sku:
+            product_vals['default_code'] = sku
+            
+        product = self.env['product.product'].sudo().create(product_vals)
+        
+        # Si es un producto de envío, crear también el carrier
+        if product_type == 'shipping':
+            shopify_instance_id = self.env.context.get('shopify_instance_id')
+            if shopify_instance_id:
+                vals = {
+                    'is_shopify': True,
+                    'shopify_web_id': shopify_instance_id.id,
+                    'name': shopify_instance_id.name + '.' + name,
+                    'product_id': product.id,
+                }
+                shipping = self.env['delivery.carrier'].sudo().create(vals)
+                
+        return product
 
     def get_order_url(self, shopify_instance_id, endpoint):
         # Construye la URL para la API de Shopify basada en la instancia y el endpoint
