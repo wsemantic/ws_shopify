@@ -846,7 +846,7 @@ class ProductTemplate(models.Model):
                 color_option_key = f"option{instance_id.color_option_position}"
                 
                 # Extraemos el nombre “real” del atributo color
-                variant_data[color_option_key] = self._extract_name(template_attribute_value)
+                variant_data[color_option_key] = self._extract_name(template_attribute_value.product_attribute_value_id)
                 
                 size_value = variant.product_template_attribute_value_ids.filtered(
                     lambda v: v.attribute_id.name.lower() != 'color'
@@ -860,7 +860,7 @@ class ProductTemplate(models.Model):
                 # Caso normal - todos los atributos
                 for idx, attr_val in enumerate(variant.product_template_attribute_value_ids, 1):
                     if idx <= 3:  # Shopify solo permite 3 opciones
-                        variant_data[f"option{idx}"] = self._extract_name(attr_val)
+                        variant_data[f"option{idx}"] = self._extract_name(attr_val.product_attribute_value_id)
     
         return variant_data
         
@@ -869,6 +869,7 @@ class ProductTemplate(models.Model):
         Si attr_val.name tiene el formato 'code:name' y el código coincide con attr_val.code,
         devuelve solo la parte después de ':'; en caso contrario, devuelve attr_val.name.
         """
+        
         if not attr_val.name:
             return ""
         m = re.match(r'([^:]+):(.+)', attr_val.name)
