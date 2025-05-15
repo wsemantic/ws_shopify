@@ -824,38 +824,58 @@ class ProductTemplate(models.Model):
                 
     def _prepare_shopify_variant_data(self, variant, instance_id, template_attribute_value=None, is_color_split=False, is_update=False):
         """Prepara los datos de la variante para enviar a Shopify"""
-
         variant_data = {
             "price": variant.product_tmpl_id.wholesale_price if not instance_id.prices_include_tax else variant.lst_price,
             "sku": variant.default_code or "",
             "barcode": variant.barcode or "",
             "inventory_management": "shopify"
         }                
-
+    
         if is_update:
             # Obtener el mapping de la variante para la instancia específica
-            variant_map = variant.shopify_variant_map_ids.filtered(lambda m: m.shopify_instance_id == instance_id)
+            variant_map = variant.shopify_variant_map_ids.filtered(
+                lambda m: m.shopify_instance_id == instance_id
+            )
             if variant_map and variant_map.web_variant_id:
                 variant_data["id"] = variant_map.web_variant_id
         else:
-            #de momento no se actualizan atributos tras la creacion
+            # de momento no se actualizan atributos tras la creacion
             if is_color_split and template_attribute_value:
                 # Si estamos separando por colores, solo usamos el atributo talla
                 size_option_key = f"option{instance_id.size_option_position}"
                 color_option_key = f"option{instance_id.color_option_position}"
-            
-                variant_data[color_option_key] = template_attribute_value.name if is_color_split and template_attribute_value else ""
-                size_value = variant.product_template_attribute_value_ids.filtered(lambda v: v.attribute_id.name.lower() != 'color')
-                variant_data[size_option_key] = size_value.name if size_value else "Default"
+                
+                # Extraemos el nombre “real” del atributo color
+                variant_data[color_option_key] = self._extract_name(template_attribute_value)
+                
+                size_value = variant.product_template_attribute_value_ids.filtered(
+                    lambda v: v.attribute_id.name.lower() != 'color'
+                )
+                variant_data[size_option_key] = (
+                    self._extract_name(size_value)
+                    if size_value
+                    else "Default"
+                )
             else:
                 # Caso normal - todos los atributos
                 for idx, attr_val in enumerate(variant.product_template_attribute_value_ids, 1):
                     if idx <= 3:  # Shopify solo permite 3 opciones
-                        variant_data[f"option{idx}"] = attr_val.name
-
+                        variant_data[f"option{idx}"] = self._extract_name(attr_val)
+    
         return variant_data
         
-                 
+    def _extract_name(self, attr_val):
+        """
+        Si attr_val.name tiene el formato 'code:name' y el código coincide con attr_val.code,
+        devuelve solo la parte después de ':'; en caso contrario, devuelve attr_val.name.
+        """
+        if not attr_val.name:
+            return ""
+        m = re.match(r'([^:]+):(.+)', attr_val.name)
+        if m and m.group(1) == (attr_val.code or ""):
+            return m.group(2)
+        return attr_val.name
+            
     def export_stock_to_shopify(self, shopify_instance_ids, products=None):
         _logger.info("WSSH Exportar stocks")
         
@@ -877,7 +897,7 @@ class ProductTemplate(models.Model):
                 variants = self.env['product.product'].search([('product_tmpl_id', 'in', products.ids)])
             else:
                 # Dominio original para stock.quants, según fecha y último ID exportado.
-                #usamos effective_export_date que es el mayor entre fecha escritura quant, y fecha creacion mapa stock
+                #usamos effective_export_date (deberia llamarse (effective write date) que es el mayor entre fecha escritura quant, y fecha creacion mapa stock
                 #porque entre la creacion de productos en odoo y la tarea de exportacion de prodcutos que crea el mapa de stock se ha podido colar la tarea de exportacion de stock,
                 #retrasando la ultima fecha de exportacion de stock saltandose los quant modificados
                 quant_domain = [
