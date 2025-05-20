@@ -483,7 +483,7 @@ class ProductTemplate(models.Model):
         loc_ids = ','.join(str(loc.shopify_location_id) for loc in locations) if locations else ''
         return loc_ids
         
-   def export_products_to_shopify(self, shopify_instance_ids, update=False, products=None):
+    def export_products_to_shopify(self, shopify_instance_ids, update=False, products=None):
         """
         Exporta productos a Shopify, filtrando por aquellos modificados desde la última exportación.
         """
