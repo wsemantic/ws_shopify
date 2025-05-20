@@ -696,17 +696,51 @@ class ProductTemplate(models.Model):
             product_data["product"]["body_html"] = product.description or ""
             product_data["product"]["tags"] = ','.join(tag.name for tag in product.product_tag_ids)
 
-        # Añadir opciones si hay atributos
+        # --- CAMBIO PRINCIPAL: Forzar el orden de las opciones según configuración, siempre, no solo en split ---
         if product.attribute_line_ids and not update:
+            # Creamos una lista de posiciones [(pos, attr_line), ...] usando las posiciones configuradas
+            attr_lines = list(product.attribute_line_ids)
+            # Detección de nombres típicos para talla y color, ajusta si tienes nombres distintos
+            color_line = next((l for l in attr_lines if l.attribute_id.name.lower() == 'color'), None)
+            size_line = next((l for l in attr_lines if l.attribute_id.name.lower() in ('size', 'talla')), None)
+            # Resto de atributos
+            other_lines = [l for l in attr_lines if l not in (color_line, size_line)]
             options = []
-            for idx, attr_line in enumerate(product.attribute_line_ids, 1):
-                if idx <= 3:
-                    options.append({
-                        "name": attr_line.attribute_id.name,
-                        "position": idx,
-                        "values": attr_line.value_ids.mapped('name')
-                    })
+            # Coloca en la posición que marque instance_id.size_option_position y color_option_position
+            max_options = 3
+            pos_map = {}
+            if color_line:
+                pos_map[instance_id.color_option_position] = {
+                    "name": color_line.attribute_id.name,
+                    "position": instance_id.color_option_position,
+                    "values": color_line.value_ids.mapped('name'),
+                }
+            if size_line:
+                pos_map[instance_id.size_option_position] = {
+                    "name": size_line.attribute_id.name,
+                    "position": instance_id.size_option_position,
+                    "values": sorted(size_line.value_ids.mapped('name'), key=get_size_value),
+                }
+            # Añadir otros atributos en posiciones libres
+            other_pos = 1
+            for line in other_lines:
+                # Evita colisiones de posición
+                while other_pos in pos_map:
+                    other_pos += 1
+                if other_pos > max_options:
+                    break
+                pos_map[other_pos] = {
+                    "name": line.attribute_id.name,
+                    "position": other_pos,
+                    "values": line.value_ids.mapped('name'),
+                }
+                other_pos += 1
+            # Empaqueta las opciones en orden de posición
+            for pos in sorted(pos_map):
+                options.append(pos_map[pos])
             product_data["product"]["options"] = options
+
+        # --- FIN CAMBIO ---
 
         # Cambio: Usar shopify.product.template.map en lugar de shopify_product_id
         product_map = self.env['shopify.product.template.map'].sudo().search([
