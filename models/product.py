@@ -1208,10 +1208,10 @@ class ProductTemplate(models.Model):
         option_attr_lines = self._get_option_attr_lines(product, instance_id)
         _logger.info("WSSH Single p1")
         product_input = self._build_graphql_product_input_v2(product, instance_id, option_attr_lines, update)
-        _logger.debug("WSSH DEBUG product_input (GraphQL): %s", json.dumps(product_input, indent=2, default=str))
+        _logger.info("WSSH DEBUG product_input (GraphQL): %s", json.dumps(product_input, indent=2, default=str))
         _logger.info("WSSH Single p2")
         graphql_response = self._shopify_graphql_call_v2(instance_id, product_input, update)
-        _logger.debug("WSSH DEBUG graphql_response: %s", json.dumps(graphql_response, indent=2, default=str))
+        _logger.info("WSSH DEBUG graphql_response: %s", json.dumps(graphql_response, indent=2, default=str))
         _logger.info("WSSH Single p3")
         product_id = self._handle_graphql_product_response_v2(product, instance_id, graphql_response, update)
         _logger.info("WSSH Single p4")
@@ -1220,9 +1220,9 @@ class ProductTemplate(models.Model):
                 self._prepare_shopify_single_product_variant_bulk_data(v, product_id, instance_id, option_attr_lines)
                 for v in product.product_variant_ids if v.default_code
             ]
-            _logger.debug("WSSH DEBUG variant_inputs (bulk): %s", json.dumps(variant_inputs, indent=2, default=str))
+            _logger.info("WSSH DEBUG variant_inputs (bulk): %s", json.dumps(variant_inputs, indent=2, default=str))
             bulk_response = self._shopify_graphql_variants_bulk_create(instance_id, product_id, variant_inputs)
-            _logger.debug("WSSH DEBUG bulk_response: %s", json.dumps(bulk_response, indent=2, default=str))
+            _logger.info("WSSH DEBUG bulk_response: %s", json.dumps(bulk_response, indent=2, default=str))
             self._handle_graphql_variant_bulk_response(product, instance_id, bulk_response)
 
     def _build_graphql_product_input_v2(self, product, instance_id, option_attr_lines, update):
@@ -1263,17 +1263,17 @@ class ProductTemplate(models.Model):
             }
         }
         """ % ("Update" if update else "Create", "Update" if update else "Create")
-        _logger.debug("WSSH DEBUG GraphQL mutation: %s", mutation)
-        _logger.debug("WSSH DEBUG GraphQL endpoint: %s", graphql_url)
-        _logger.debug("WSSH DEBUG GraphQL headers: %s", headers)
-        _logger.debug("WSSH DEBUG GraphQL variables: %s", json.dumps({"input": product_input}, indent=2, default=str))
+        _logger.info("WSSH DEBUG GraphQL mutation: %s", mutation)
+        _logger.info("WSSH DEBUG GraphQL endpoint: %s", graphql_url)
+        _logger.info("WSSH DEBUG GraphQL headers: %s", headers)
+        _logger.info("WSSH DEBUG GraphQL variables: %s", json.dumps({"input": product_input}, indent=2, default=str))
 
         response = requests.post(graphql_url, headers=headers, json={
             "query": mutation,
             "variables": {"input": product_input}
         })
-        _logger.debug("WSSH DEBUG Raw GraphQL HTTP status: %s", response.status_code)
-        _logger.debug("WSSH DEBUG Raw GraphQL response text: %s", response.text)
+        _logger.info("WSSH DEBUG Raw GraphQL HTTP status: %s", response.status_code)
+        _logger.info("WSSH DEBUG Raw GraphQL response text: %s", response.text)
         try:
             return response.json()
         except Exception as ex:
@@ -1283,7 +1283,7 @@ class ProductTemplate(models.Model):
     def _handle_graphql_product_response_v2(self, product, instance_id, response_json, update):
         """Procesa respuesta de Shopify GraphQL (solo producto), devuelve product_gid."""
         operation = "productUpdate" if update else "productCreate"
-        _logger.debug("WSSH DEBUG parsed response_json: %s", json.dumps(response_json, indent=2, default=str))
+        _logger.info("WSSH DEBUG parsed response_json: %s", json.dumps(response_json, indent=2, default=str))
         data = response_json.get("data", {}).get(operation, {})
         errors = data.get("userErrors", [])
         product_data = data.get("product")
@@ -1350,16 +1350,16 @@ class ProductTemplate(models.Model):
             "productId": product_gid,
             "variants": variant_inputs
         }
-        _logger.debug("WSSH DEBUG Bulk GraphQL mutation: %s", mutation)
-        _logger.debug("WSSH DEBUG Bulk GraphQL endpoint: %s", graphql_url)
-        _logger.debug("WSSH DEBUG Bulk GraphQL variables: %s", json.dumps(variables, indent=2, default=str))
+        _logger.info("WSSH DEBUG Bulk GraphQL mutation: %s", mutation)
+        _logger.info("WSSH DEBUG Bulk GraphQL endpoint: %s", graphql_url)
+        _logger.info("WSSH DEBUG Bulk GraphQL variables: %s", json.dumps(variables, indent=2, default=str))
 
         response = requests.post(graphql_url, headers=headers, json={
             "query": mutation,
             "variables": variables
         })
-        _logger.debug("WSSH DEBUG Bulk GraphQL HTTP status: %s", response.status_code)
-        _logger.debug("WSSH DEBUG Bulk GraphQL response text: %s", response.text)
+        _logger.info("WSSH DEBUG Bulk GraphQL HTTP status: %s", response.status_code)
+        _logger.info("WSSH DEBUG Bulk GraphQL response text: %s", response.text)
         try:
             return response.json()
         except Exception as ex:
