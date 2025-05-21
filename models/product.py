@@ -538,7 +538,7 @@ class ProductTemplate(models.Model):
             for product in products_to_export:                
                 if not instance_id.split_products_by_color:
                                                                                  
-                    self._export_single_product(product, instance_id, headers, update)
+                    self._export_single_product_v2(product, instance_id, headers, update)
                     processed_count += 1  # Cambio: Incrementar contador
                     continue
 
@@ -546,7 +546,7 @@ class ProductTemplate(models.Model):
                     lambda l: l.attribute_id.name.lower() == 'color')
                 if not color_line:
                                                                                  
-                    self._export_single_product(product, instance_id, headers, update)
+                    self._export_single_product_v2(product, instance_id, headers, update)
                     processed_count += 1  # Cambio: Incrementar contador
                     continue
                 # Variable para rastrear si se procesó al menos una variante del producto
@@ -1201,6 +1201,135 @@ class ProductTemplate(models.Model):
                     continue
                 _logger.error(f"WSSH Failed to write {field_name} after {max_retries} retries: {str(e)}")
                 raise UserError(f"Error de concurrencia persistente al escribir {field_name}: {str(e)}")
+                
+    def _export_single_product_v2(self, product, instance_id, headers, update):
+        """Exporta un producto usando GraphQL (coexistiendo con versión anterior REST)."""
+        option_attr_lines = self._get_option_attr_lines(product, instance_id)
+        product_input = self._build_graphql_product_input(product, instance_id, option_attr_lines, update)
+        graphql_response = self._shopify_graphql_call(instance_id, product_input, update)
+        self._handle_graphql_product_response(product, instance_id, graphql_response, update)
+
+    def _get_option_attr_lines(self, product, instance_id):
+        """Determina el orden y atributos para Shopify options."""
+        attr_lines = list(product.attribute_line_ids)
+        pos_map = {}
+        color_line = next((l for l in attr_lines if l.attribute_id.name.lower() == 'color'), None)
+        size_line = next((l for l in attr_lines if l.attribute_id.name.lower() in ('size', 'talla')), None)
+        other_lines = [l for l in attr_lines if l not in (color_line, size_line)]
+
+        if color_line:
+            pos_map[instance_id.color_option_position] = color_line
+        if size_line:
+            pos_map[instance_id.size_option_position] = size_line
+
+        other_pos = 1
+        max_options = 3
+        for line in other_lines:
+            while other_pos in pos_map:
+                other_pos += 1
+            if other_pos > max_options:
+                break
+            pos_map[other_pos] = line
+            other_pos += 1
+        return [pos_map[pos] for pos in sorted(pos_map)]
+
+    def _build_graphql_product_input(self, product, instance_id, option_attr_lines, update):
+        """Construye payload GraphQL para producto y variantes."""
+        options = [line.attribute_id.name for line in option_attr_lines]
+        variants = [
+            self._prepare_shopify_single_product_variant_data(v, instance_id, option_attr_lines)
+            for v in product.product_variant_ids if v.default_code
+        ]
+
+        product_input = {
+            "title": product.name,
+            "bodyHtml": product.description or "",
+            "tags": ','.join(tag.name for tag in product.product_tag_ids),
+            "options": options,
+            "variants": variants,
+            "status": "DRAFT"
+        }
+
+        if update:
+            product_map = self.env['shopify.product.template.map'].sudo().search([
+                ('odoo_id', '=', product.id),
+                ('shopify_instance_id', '=', instance_id.id),
+            ], limit=1)
+            if product_map:
+                shopify_id = product_map.web_product_id
+                if not str(shopify_id).startswith("gid://"):
+                    shopify_id = f"gid://shopify/Product/{shopify_id}"
+                product_input["id"] = shopify_id
+
+        return product_input
+
+    def _shopify_graphql_call(self, instance_id, product_input, update):
+        """Ejecuta llamada GraphQL a Shopify."""
+        graphql_url = f"https://{instance_id.shopify_host}.myshopify.com/admin/api/{instance_id.shopify_version}/graphql.json"
+        headers = {
+            "X-Shopify-Access-Token": instance_id.shopify_shared_secret,
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+
+        mutation = """
+        mutation product%s($input: ProductInput!) {
+            product%s(input: $input) {
+                product { id }
+                userErrors { field message }
+            }
+        }
+        """ % ("Update" if update else "Create", "Update" if update else "Create")
+
+        response = requests.post(graphql_url, headers=headers, json={
+            "query": mutation,
+            "variables": {"input": product_input}
+        })
+        return response.json()
+
+    def _handle_graphql_product_response(self, product, instance_id, response_json, update):
+        """Procesa respuesta de Shopify GraphQL."""
+        operation = "productUpdate" if update else "productCreate"
+        data = response_json.get("data", {}).get(operation, {})
+        errors = data.get("userErrors", [])
+        product_data = data.get("product")
+
+        if errors:
+            _logger.error(f"WSSH Error {operation}: {errors}")
+            raise UserError(f"WSSH Error exporting product {product.name}: {errors}")
+
+        if product_data and product_data.get("id"):
+            shopify_product_gid = product_data["id"]
+            shopify_product_id = shopify_product_gid.split("/")[-1]
+
+            product_map = self.env['shopify.product.template.map'].sudo().search([
+                ('odoo_id', '=', product.id),
+                ('shopify_instance_id', '=', instance_id.id),
+            ], limit=1)
+
+            if not product_map:
+                self.env['shopify.product.template.map'].create({
+                    'web_product_id': shopify_product_id,
+                    'odoo_id': product.id,
+                    'shopify_instance_id': instance_id.id,
+                })
+
+    def _prepare_shopify_single_product_variant_data(self, variant, instance_id, option_attr_lines):
+        """Formatea variante para GraphQL."""
+        value_map = {v.attribute_id.id: v for v in variant.product_template_attribute_value_ids}
+        options = [
+            self._extract_name(value_map.get(line.attribute_id.id).product_attribute_value_id)
+            if value_map.get(line.attribute_id.id) else "Default"
+            for line in option_attr_lines
+        ]
+        return {
+            "sku": variant.default_code or "",
+            "barcode": variant.barcode or "",
+            "price": str(variant.product_tmpl_id.wholesale_price if not instance_id.prices_include_tax else variant.list_price),
+            "inventoryManagement": "SHOPIFY",
+            "options": options
+        }
+                
 
 # inherit class product.attribute and add fields for shopify
 class ProductAttribute(models.Model):
