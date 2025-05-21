@@ -1226,14 +1226,24 @@ class ProductTemplate(models.Model):
             self._handle_graphql_variant_bulk_response(product, instance_id, bulk_response)
 
     def _build_graphql_product_input_v2(self, product, instance_id, option_attr_lines, update):
-        """Construye payload GraphQL para crear solo el producto (sin variantes)."""
-        options = [line.attribute_id.name for line in option_attr_lines]
+        """Construye payload GraphQL para crear el producto con productOptions."""
+        product_options = []
+        for line in option_attr_lines:
+            values = line.value_ids.mapped('name')
+            values = sorted(values, key=get_size_value) if line.attribute_id.name.lower() in ('size', 'talla') else sorted(values)
+            # Shopify espera un array de dicts {name: value}
+            value_dicts = [{"name": v} for v in values]
+            product_options.append({
+                "name": line.attribute_id.name,
+                "values": value_dicts,
+            })
+
         product_input = {
             "title": product.name,
             "descriptionHtml": product.description or "",
             "tags": ','.join(tag.name for tag in product.product_tag_ids),
-            "options": options,
-            "status": "DRAFT"
+            "status": "DRAFT",
+            "productOptions": product_options
         }
         if update:
             product_map = self.env['shopify.product.template.map'].sudo().search([
@@ -1246,6 +1256,7 @@ class ProductTemplate(models.Model):
                     shopify_id = f"gid://shopify/Product/{shopify_id}"
                 product_input["id"] = shopify_id
         return product_input
+
 
     def _shopify_graphql_call_v2(self, instance_id, product_input, update):
         """Ejecuta llamada GraphQL a Shopify para crear/actualizar producto (sin variantes)."""
