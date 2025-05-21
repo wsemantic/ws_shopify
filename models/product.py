@@ -1320,7 +1320,7 @@ class ProductTemplate(models.Model):
         return None
 
     def _prepare_shopify_single_product_variant_bulk_data(self, variant, instance_id, option_attr_lines):
-        """Prepara cada variante para bulk create GraphQL usando optionName."""
+        """Prepara cada variante para bulk create GraphQL usando optionName (sin sku/inventoryManagement en la raíz)."""
         value_map = {v.attribute_id.id: v for v in variant.product_template_attribute_value_ids}
         option_values = []
         for line in option_attr_lines:
@@ -1330,13 +1330,14 @@ class ProductTemplate(models.Model):
                 "optionName": line.attribute_id.name,
                 "name": value_name,
             })
-        return {
-            "sku": variant.default_code or "",
-            "barcode": variant.barcode or "",
+        result = {
             "price": str(variant.product_tmpl_id.wholesale_price if not instance_id.prices_include_tax else variant.list_price),
-            "inventoryManagement": "SHOPIFY",
+            "barcode": variant.barcode or "",
             "optionValues": option_values
         }
+        if variant.default_code:
+            result["inventoryItem"] = {"sku": variant.default_code}
+        return result
 
 
     def _shopify_graphql_variants_bulk_create(self, instance_id, product_gid, variant_inputs):
