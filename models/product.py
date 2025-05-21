@@ -1204,59 +1204,37 @@ class ProductTemplate(models.Model):
                 
     def _export_single_product_v2(self, product, instance_id, headers, update):
         """Exporta un producto usando GraphQL (coexistiendo con versión anterior REST)."""
-        _logger.info("WSSH Single p1.0")
+        _logger.info("WSSH Exporta no split v2")
         option_attr_lines = self._get_option_attr_lines(product, instance_id)
-        _logger.info("WSSH DEBUG option_attr_lines: %s", option_attr_lines)
+        _logger.info("WSSH Single p1")
+        product_input = self._build_graphql_product_input_v2(product, instance_id, option_attr_lines, update)
+        _logger.debug("WSSH DEBUG product_input (GraphQL): %s", json.dumps(product_input, indent=2, default=str))
         _logger.info("WSSH Single p2")
-        product_input = self._build_graphql_product_input(product, instance_id, option_attr_lines, update)
-        _logger.info("WSSH DEBUG product_input (GraphQL): %s", json.dumps(product_input, indent=2, default=str))
+        graphql_response = self._shopify_graphql_call_v2(instance_id, product_input, update)
+        _logger.debug("WSSH DEBUG graphql_response: %s", json.dumps(graphql_response, indent=2, default=str))
         _logger.info("WSSH Single p3")
-        graphql_response = self._shopify_graphql_call(instance_id, product_input, update)
-        _logger.info("WSSH DEBUG graphql_response: %s", json.dumps(graphql_response, indent=2, default=str))
+        product_id = self._handle_graphql_product_response_v2(product, instance_id, graphql_response, update)
         _logger.info("WSSH Single p4")
-        self._handle_graphql_product_response(product, instance_id, graphql_response, update)
+        if product_id:
+            variant_inputs = [
+                self._prepare_shopify_single_product_variant_bulk_data(v, product_id, instance_id, option_attr_lines)
+                for v in product.product_variant_ids if v.default_code
+            ]
+            _logger.debug("WSSH DEBUG variant_inputs (bulk): %s", json.dumps(variant_inputs, indent=2, default=str))
+            bulk_response = self._shopify_graphql_variants_bulk_create(instance_id, product_id, variant_inputs)
+            _logger.debug("WSSH DEBUG bulk_response: %s", json.dumps(bulk_response, indent=2, default=str))
+            self._handle_graphql_variant_bulk_response(product, instance_id, bulk_response)
 
-    def _get_option_attr_lines(self, product, instance_id):
-        """Determina el orden y atributos para Shopify options."""
-        attr_lines = list(product.attribute_line_ids)
-        pos_map = {}
-        color_line = next((l for l in attr_lines if l.attribute_id.name.lower() == 'color'), None)
-        size_line = next((l for l in attr_lines if l.attribute_id.name.lower() in ('size', 'talla')), None)
-        other_lines = [l for l in attr_lines if l not in (color_line, size_line)]
-
-        if color_line:
-            pos_map[instance_id.color_option_position] = color_line
-        if size_line:
-            pos_map[instance_id.size_option_position] = size_line
-
-        other_pos = 1
-        max_options = 3
-        for line in other_lines:
-            while other_pos in pos_map:
-                other_pos += 1
-            if other_pos > max_options:
-                break
-            pos_map[other_pos] = line
-            other_pos += 1
-        return [pos_map[pos] for pos in sorted(pos_map)]
-
-    def _build_graphql_product_input(self, product, instance_id, option_attr_lines, update):
-        """Construye payload GraphQL para producto y variantes."""
+    def _build_graphql_product_input_v2(self, product, instance_id, option_attr_lines, update):
+        """Construye payload GraphQL para crear solo el producto (sin variantes)."""
         options = [line.attribute_id.name for line in option_attr_lines]
-        variants = [
-            self._prepare_shopify_single_product_variant_data(v, instance_id, option_attr_lines)
-            for v in product.product_variant_ids if v.default_code
-        ]
-
         product_input = {
             "title": product.name,
-            "bodyHtml": product.description or "",
+            "descriptionHtml": product.description or "",
             "tags": ','.join(tag.name for tag in product.product_tag_ids),
             "options": options,
-            "variants": variants,
             "status": "DRAFT"
         }
-
         if update:
             product_map = self.env['shopify.product.template.map'].sudo().search([
                 ('odoo_id', '=', product.id),
@@ -1267,11 +1245,10 @@ class ProductTemplate(models.Model):
                 if not str(shopify_id).startswith("gid://"):
                     shopify_id = f"gid://shopify/Product/{shopify_id}"
                 product_input["id"] = shopify_id
-
         return product_input
 
-    def _shopify_graphql_call(self, instance_id, product_input, update):
-        """Ejecuta llamada GraphQL a Shopify."""
+    def _shopify_graphql_call_v2(self, instance_id, product_input, update):
+        """Ejecuta llamada GraphQL a Shopify para crear/actualizar producto (sin variantes)."""
         graphql_url = f"https://{instance_id.shopify_host}.myshopify.com/admin/api/{instance_id.shopify_version}/graphql.json"
         headers = {
             "X-Shopify-Access-Token": instance_id.shopify_shared_secret,
@@ -1286,54 +1263,53 @@ class ProductTemplate(models.Model):
             }
         }
         """ % ("Update" if update else "Create", "Update" if update else "Create")
-        _logger.info("WSSH DEBUG GraphQL mutation: %s", mutation)
-        _logger.info("WSSH DEBUG GraphQL endpoint: %s", graphql_url)
-        _logger.info("WSSH DEBUG GraphQL headers: %s", headers)
-        _logger.info("WSSH DEBUG GraphQL variables: %s", json.dumps({"input": product_input}, indent=2, default=str))
-    
+        _logger.debug("WSSH DEBUG GraphQL mutation: %s", mutation)
+        _logger.debug("WSSH DEBUG GraphQL endpoint: %s", graphql_url)
+        _logger.debug("WSSH DEBUG GraphQL headers: %s", headers)
+        _logger.debug("WSSH DEBUG GraphQL variables: %s", json.dumps({"input": product_input}, indent=2, default=str))
+
         response = requests.post(graphql_url, headers=headers, json={
             "query": mutation,
             "variables": {"input": product_input}
         })
-        _logger.info("WSSH DEBUG Raw GraphQL HTTP status: %s", response.status_code)
-        _logger.info("WSSH DEBUG Raw GraphQL response text: %s", response.text)
+        _logger.debug("WSSH DEBUG Raw GraphQL HTTP status: %s", response.status_code)
+        _logger.debug("WSSH DEBUG Raw GraphQL response text: %s", response.text)
         try:
             return response.json()
         except Exception as ex:
             _logger.error("WSSH ERROR al decodificar JSON de respuesta GraphQL: %s", ex)
             raise UserError("WSSH ERROR: respuesta no JSON de Shopify: %s" % response.text)
 
-    def _handle_graphql_product_response(self, product, instance_id, response_json, update):
-        """Procesa respuesta de Shopify GraphQL."""
+    def _handle_graphql_product_response_v2(self, product, instance_id, response_json, update):
+        """Procesa respuesta de Shopify GraphQL (solo producto), devuelve product_gid."""
         operation = "productUpdate" if update else "productCreate"
-        _logger.info("WSSH DEBUG parsed response_json: %s", json.dumps(response_json, indent=2, default=str))
+        _logger.debug("WSSH DEBUG parsed response_json: %s", json.dumps(response_json, indent=2, default=str))
         data = response_json.get("data", {}).get(operation, {})
         errors = data.get("userErrors", [])
         product_data = data.get("product")
-    
+
         if errors:
             _logger.error(f"WSSH Error {operation}: {errors}")
             raise UserError(f"WSSH Error exporting product {product.name}: {errors}")
-    
+
         if product_data and product_data.get("id"):
             shopify_product_gid = product_data["id"]
             shopify_product_id = shopify_product_gid.split("/")[-1]
-    
             product_map = self.env['shopify.product.template.map'].sudo().search([
                 ('odoo_id', '=', product.id),
                 ('shopify_instance_id', '=', instance_id.id),
             ], limit=1)
-    
             if not product_map:
                 self.env['shopify.product.template.map'].create({
                     'web_product_id': shopify_product_id,
                     'odoo_id': product.id,
                     'shopify_instance_id': instance_id.id,
                 })
-    
+            return shopify_product_gid
+        return None
 
-    def _prepare_shopify_single_product_variant_data(self, variant, instance_id, option_attr_lines):
-        """Formatea variante para GraphQL."""
+    def _prepare_shopify_single_product_variant_bulk_data(self, variant, product_gid, instance_id, option_attr_lines):
+        """Prepara cada variante para bulk create GraphQL."""
         value_map = {v.attribute_id.id: v for v in variant.product_template_attribute_value_ids}
         options = [
             self._extract_name(value_map.get(line.attribute_id.id).product_attribute_value_id)
@@ -1341,13 +1317,66 @@ class ProductTemplate(models.Model):
             for line in option_attr_lines
         ]
         return {
+            "productId": product_gid,
             "sku": variant.default_code or "",
             "barcode": variant.barcode or "",
             "price": str(variant.product_tmpl_id.wholesale_price if not instance_id.prices_include_tax else variant.list_price),
             "inventoryManagement": "SHOPIFY",
             "options": options
         }
-                
+
+    def _shopify_graphql_variants_bulk_create(self, instance_id, product_gid, variant_inputs):
+        """Llama a productVariantsBulkCreate en Shopify."""
+        graphql_url = f"https://{instance_id.shopify_host}.myshopify.com/admin/api/{instance_id.shopify_version}/graphql.json"
+        headers = {
+            "X-Shopify-Access-Token": instance_id.shopify_shared_secret,
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        mutation = """
+        mutation productVariantsBulkCreate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+            productVariantsBulkCreate(productId: $productId, variants: $variants) {
+                productVariants {
+                    id
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+        """
+        variables = {
+            "productId": product_gid,
+            "variants": variant_inputs
+        }
+        _logger.debug("WSSH DEBUG Bulk GraphQL mutation: %s", mutation)
+        _logger.debug("WSSH DEBUG Bulk GraphQL endpoint: %s", graphql_url)
+        _logger.debug("WSSH DEBUG Bulk GraphQL variables: %s", json.dumps(variables, indent=2, default=str))
+
+        response = requests.post(graphql_url, headers=headers, json={
+            "query": mutation,
+            "variables": variables
+        })
+        _logger.debug("WSSH DEBUG Bulk GraphQL HTTP status: %s", response.status_code)
+        _logger.debug("WSSH DEBUG Bulk GraphQL response text: %s", response.text)
+        try:
+            return response.json()
+        except Exception as ex:
+            _logger.error("WSSH ERROR al decodificar JSON de respuesta GraphQL (bulk): %s", ex)
+            raise UserError("WSSH ERROR: respuesta no JSON de Shopify (bulk): %s" % response.text)
+
+    def _handle_graphql_variant_bulk_response(self, product, instance_id, response_json):
+        """Procesa respuesta de Shopify GraphQL (bulk variants)."""
+        data = response_json.get("data", {}).get("productVariantsBulkCreate", {})
+        errors = data.get("userErrors", [])
+        product_variants = data.get("productVariants", [])
+        if errors:
+            _logger.error(f"WSSH Error productVariantsBulkCreate: {errors}")
+            raise UserError(f"WSSH Error exporting variants for product {product.name}: {errors}")
+        if product_variants:
+            _logger.info(f"WSSH Successfully created {len(product_variants)} variants in Shopify for product {product.name}")
+ 
 
 # inherit class product.attribute and add fields for shopify
 class ProductAttribute(models.Model):
