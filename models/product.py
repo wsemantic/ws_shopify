@@ -1208,7 +1208,7 @@ class ProductTemplate(models.Model):
                 _logger.error(f"WSSH Failed to write {field_name} after {max_retries} retries: {str(e)}")
                 raise UserError(f"Error de concurrencia persistente al escribir {field_name}: {str(e)}")
 
-     def _export_single_product_v2(self, product, instance_id, headers, update):
+    def _export_single_product_v2(self, product, instance_id, headers, update):
         """
         Exporta o actualiza un producto 'single' en Shopify usando GraphQL.
         - Si el producto NO existe en Shopify: lo crea siempre.
