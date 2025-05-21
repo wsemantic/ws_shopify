@@ -1204,7 +1204,7 @@ class ProductTemplate(models.Model):
                 
     def _export_single_product_v2(self, product, instance_id, headers, update):
         """Exporta un producto usando GraphQL (coexistiendo con versión anterior REST)."""
-        _logger.info("WSSH Exporta no split v2")
+        _logger.info("WSSH Dentro Exporta no split v2")
         option_attr_lines = self._get_option_attr_lines(product, instance_id)
         _logger.info("WSSH Single p1")
         product_input = self._build_graphql_product_input_v2(product, instance_id, option_attr_lines, update)
@@ -1220,6 +1220,7 @@ class ProductTemplate(models.Model):
                 self._prepare_shopify_single_product_variant_bulk_data(v, instance_id, option_attr_lines)
                 for v in product.product_variant_ids if v.default_code
             ]
+            variant_inputs = self._exclude_first_variant(variant_inputs, option_attr_lines)
             _logger.info("WSSH DEBUG variant_inputs (bulk): %s", json.dumps(variant_inputs, indent=2, default=str))
             bulk_response = self._shopify_graphql_variants_bulk_create(instance_id, product_id, variant_inputs)
             _logger.info("WSSH DEBUG bulk_response: %s", json.dumps(bulk_response, indent=2, default=str))
@@ -1417,6 +1418,16 @@ class ProductTemplate(models.Model):
             other_pos += 1
         return [pos_map[pos] for pos in sorted(pos_map)]
 
+    def _exclude_first_variant(self, variant_inputs, option_attr_lines):
+        """Excluye la variante que corresponde a la primera combinación de cada opción."""
+        # Encuentra el primer valor de cada opción en el orden
+        first_combo = tuple(line.value_ids[0].name for line in option_attr_lines)
+        filtered = []
+        for v in variant_inputs:
+            combo = tuple(opt['name'] for opt in v['optionValues'])
+            if combo != first_combo:
+                filtered.append(v)
+        return filtered
 
 # inherit class product.attribute and add fields for shopify
 class ProductAttribute(models.Model):
