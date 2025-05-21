@@ -1434,6 +1434,35 @@ class ProductTemplate(models.Model):
             _logger.error("WSSH ERROR al decodificar JSON de respuesta GraphQL (bulk): %s", ex)
             raise UserError("WSSH ERROR: respuesta no JSON de Shopify (bulk): %s" % response.text)
 
+    def _shopify_graphql_update_variant(self, instance_id, variant_id, sku="", barcode=""):
+        """Actualiza una variante de Shopify con su SKU y barcode."""
+        graphql_url = f"https://{instance_id.shopify_host}.myshopify.com/admin/api/{instance_id.shopify_version}/graphql.json"
+        headers = {
+            "X-Shopify-Access-Token": instance_id.shopify_shared_secret,
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        mutation = """
+        mutation productVariantUpdate($input: ProductVariantInput!) {
+          productVariantUpdate(input: $input) {
+            productVariant { id }
+            userErrors { field message }
+          }
+        }
+        """
+        update_input = {
+            "id": variant_id
+        }
+        if sku:
+            update_input["sku"] = sku
+        if barcode:
+            update_input["barcode"] = barcode
+        _logger.info("WSSH Updating first variant input: %s", json.dumps(update_input))
+        response = requests.post(graphql_url, headers=headers, json={
+            "query": mutation,
+            "variables": {"input": update_input}
+        })
+        _logger.info("WSSH Updated first variant response: %s", response.text)
 
 
     def _handle_graphql_variant_bulk_response(self, product, instance_id, response_json):
