@@ -1377,6 +1377,30 @@ class ProductTemplate(models.Model):
         if product_variants:
             _logger.info(f"WSSH Successfully created {len(product_variants)} variants in Shopify for product {product.name}")
  
+    def _get_option_attr_lines(self, product, instance_id):
+        """Determina el orden y atributos que usará Shopify para options."""
+        attr_lines = list(product.attribute_line_ids)
+        pos_map = {}
+        color_line = next((l for l in attr_lines if l.attribute_id.name.lower() == 'color'), None)
+        size_line = next((l for l in attr_lines if l.attribute_id.name.lower() in ('size', 'talla')), None)
+        other_lines = [l for l in attr_lines if l not in (color_line, size_line)]
+
+        if color_line:
+            pos_map[instance_id.color_option_position] = color_line
+        if size_line:
+            pos_map[instance_id.size_option_position] = size_line
+
+        other_pos = 1
+        max_options = 3
+        for line in other_lines:
+            while other_pos in pos_map:
+                other_pos += 1
+            if other_pos > max_options:
+                break
+            pos_map[other_pos] = line
+            other_pos += 1
+        return [pos_map[pos] for pos in sorted(pos_map)]
+
 
 # inherit class product.attribute and add fields for shopify
 class ProductAttribute(models.Model):
