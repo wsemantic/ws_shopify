@@ -1225,24 +1225,22 @@ class ProductTemplate(models.Model):
         if not product_id:
             return
 
-        # Genera todos los datos de variante de Odoo (mismo orden)
         variant_inputs = [
             self._prepare_shopify_single_product_variant_bulk_data(v, instance_id, option_attr_lines)
             for v in product.product_variant_ids if v.default_code
         ]
 
-        # Map GIDs a variantes de Odoo (usando la combinación de opciones)
         combo_to_gid = self._get_shopify_variant_combo_map(product, variant_gids, option_attr_lines, graphql_response)
-        first_combo = tuple(line.value_ids[0].name for line in option_attr_lines)
-        updates_bulk = []
+        # Determina la combinación de la primera variante (según el orden de option_attr_lines y value_ids[0])
+        first_combo = tuple(line.value_ids[0].name for line in option_attr_lines) if option_attr_lines else ()
 
+        updates_bulk = []
         if not update:
-            # En creación: actualizar solo la primera variante, crear el resto
+            # CREACIÓN: actualizar solo la primera variante autogenerada, crear el resto
             for v, vinp in zip(product.product_variant_ids, variant_inputs):
                 combo = tuple(opt['name'] for opt in vinp['optionValues'])
                 gid = combo_to_gid.get(combo)
                 if combo == first_combo and gid:
-                    # Actualiza la primera variante auto-generada (sku/barcode/price)
                     update_data = {
                         "id": gid,
                         "sku": v.default_code or "",
@@ -1253,7 +1251,7 @@ class ProductTemplate(models.Model):
                     _logger.info("WSSH Actualizando primera variante: %s", json.dumps(update_data))
             if updates_bulk:
                 self._shopify_graphql_variants_bulk_update(instance_id, product_id, updates_bulk)
-            # Crea el resto de variantes en bulk
+            # Crea el resto de variantes (las que no sean la primera)
             create_variants = []
             for v, vinp in zip(product.product_variant_ids, variant_inputs):
                 combo = tuple(opt['name'] for opt in vinp['optionValues'])
@@ -1265,7 +1263,7 @@ class ProductTemplate(models.Model):
                 _logger.info("WSSH Bulk GraphQL response: %s", json.dumps(bulk_response, indent=2, default=str))
                 self._handle_graphql_variant_bulk_response(product, instance_id, bulk_response)
         else:
-            # En actualización: solo actualizar precios (NO sku/barcode/description)
+            # UPDATE: actualiza SOLO precios de todas las variantes
             for v, vinp in zip(product.product_variant_ids, variant_inputs):
                 combo = tuple(opt['name'] for opt in vinp['optionValues'])
                 gid = combo_to_gid.get(combo)
@@ -1503,7 +1501,6 @@ class ProductTemplate(models.Model):
         """
         Procesa la respuesta de productVariantsBulkCreate para guardar los GIDs de las variantes de Shopify.
         """
-        # Guarda los mapeos de variantes aquí según tu modelo, o al menos loguea.
         if not response_json:
             _logger.error("WSSH: No response_json en bulk variant response")
             return
@@ -1512,7 +1509,7 @@ class ProductTemplate(models.Model):
             _logger.error("WSSH Bulk create variants userErrors: %s", user_errors)
         else:
             _logger.info("WSSH Bulk create variants sin errores")
-        # Puedes extender esto para guardar el mapping Odoo<->Shopify si lo necesitas
+        # Extensión: guarda mapping Odoo<->Shopify si es necesario
             
         
    def _get_shopify_variant_combo_map(self, product, variant_gids, option_attr_lines, graphql_response):
@@ -1525,6 +1522,31 @@ class ProductTemplate(models.Model):
             combo = tuple(opt['value'] for opt in v["selectedOptions"])
             combo_to_gid[combo] = v["id"]
         return combo_to_gid
+        
+    def _get_option_attr_lines(self, product, instance_id):
+        """
+        Obtiene la lista de líneas de atributos (option_attr_lines) en el orden adecuado
+        para construir el input de opciones para GraphQL.
+        """
+        attr_lines = list(product.attribute_line_ids)
+        color_line = next((l for l in attr_lines if l.attribute_id.name.lower() == 'color'), None)
+        size_line = next((l for l in attr_lines if l.attribute_id.name.lower() in ('size', 'talla')), None)
+        other_lines = [l for l in attr_lines if l not in (color_line, size_line)]
+        pos_map = {}
+        max_options = 3
+        if color_line:
+            pos_map[1] = color_line
+        if size_line:
+            pos_map[2] = size_line
+        other_pos = 3
+        for line in other_lines:
+            while other_pos in pos_map:
+                other_pos += 1
+            if other_pos > max_options:
+                break
+            pos_map[other_pos] = line
+            other_pos += 1
+        return [pos_map[pos] for pos in sorted(pos_map)]        
         
 
 
