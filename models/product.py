@@ -1208,23 +1208,38 @@ class ProductTemplate(models.Model):
         option_attr_lines = self._get_option_attr_lines(product, instance_id)
         _logger.info("WSSH Single p1")
         product_input = self._build_graphql_product_input_v2(product, instance_id, option_attr_lines, update)
-        _logger.info("WSSH DEBUG product_input (GraphQL): %s", json.dumps(product_input, indent=2, default=str))
+        _logger.info("WSSH product_input (GraphQL): %s", json.dumps(product_input, indent=2, default=str))
         _logger.info("WSSH Single p2")
         graphql_response = self._shopify_graphql_call_v2(instance_id, product_input, update)
-        _logger.info("WSSH DEBUG graphql_response: %s", json.dumps(graphql_response, indent=2, default=str))
+        _logger.info("WSSH graphql_response: %s", json.dumps(graphql_response, indent=2, default=str))
         _logger.info("WSSH Single p3")
-        product_id = self._handle_graphql_product_response_v2(product, instance_id, graphql_response, update)
+        product_id, first_variant_id = self._handle_graphql_product_response_v2(
+            product, instance_id, graphql_response, update
+        )
         _logger.info("WSSH Single p4")
         if product_id:
             variant_inputs = [
                 self._prepare_shopify_single_product_variant_bulk_data(v, instance_id, option_attr_lines)
                 for v in product.product_variant_ids if v.default_code
             ]
-            variant_inputs = self._exclude_first_variant(variant_inputs, option_attr_lines)
-            _logger.info("WSSH DEBUG variant_inputs (bulk): %s", json.dumps(variant_inputs, indent=2, default=str))
-            bulk_response = self._shopify_graphql_variants_bulk_create(instance_id, product_id, variant_inputs)
-            _logger.info("WSSH DEBUG bulk_response: %s", json.dumps(bulk_response, indent=2, default=str))
-            self._handle_graphql_variant_bulk_response(product, instance_id, bulk_response)
+            first_variant_tuple, rest_variants = self._split_first_combo_variant(
+                product, variant_inputs, option_attr_lines
+            )
+            # Actualiza la variante auto-creada por Shopify
+            if first_variant_tuple and first_variant_id:
+                variant_obj, vinp = first_variant_tuple
+                self._shopify_graphql_update_variant(
+                    instance_id, first_variant_id,
+                    sku=variant_obj.default_code or "",
+                    barcode=variant_obj.barcode or ""
+                )
+                _logger.info("WSSH First Shopify variant actualizada: sku=%s, barcode=%s", variant_obj.default_code, variant_obj.barcode)
+            # Crea el resto de variantes en bulk
+            if rest_variants:
+                _logger.info("WSSH Bulk create variantes: %s", json.dumps(rest_variants, indent=2, default=str))
+                bulk_response = self._shopify_graphql_variants_bulk_create(instance_id, product_id, rest_variants)
+                _logger.info("WSSH Bulk GraphQL response: %s", json.dumps(bulk_response, indent=2, default=str))
+                self._handle_graphql_variant_bulk_response(product, instance_id, bulk_response)
 
     def _build_graphql_product_input_v2(self, product, instance_id, option_attr_lines, update):
         """Construye payload GraphQL para crear el producto con productOptions."""
@@ -1270,7 +1285,17 @@ class ProductTemplate(models.Model):
         mutation = """
         mutation product%s($input: ProductInput!) {
             product%s(input: $input) {
-                product { id }
+                product { 
+                    id
+                    variants(first: 1) {
+                        edges {
+                            node {
+                                id
+                                selectedOptions { name value }
+                            }
+                        }
+                    }
+                }
                 userErrors { field message }
             }
         }
@@ -1293,17 +1318,20 @@ class ProductTemplate(models.Model):
             raise UserError("WSSH ERROR: respuesta no JSON de Shopify: %s" % response.text)
 
     def _handle_graphql_product_response_v2(self, product, instance_id, response_json, update):
-        """Procesa respuesta de Shopify GraphQL (solo producto), devuelve product_gid."""
         operation = "productUpdate" if update else "productCreate"
         _logger.info("WSSH DEBUG parsed response_json: %s", json.dumps(response_json, indent=2, default=str))
         data = response_json.get("data", {}).get(operation, {})
         errors = data.get("userErrors", [])
         product_data = data.get("product")
-
+        first_variant_id = None
+    
+        if product_data and product_data.get("variants", {}).get("edges"):
+            first_variant_id = product_data["variants"]["edges"][0]["node"]["id"]
+    
         if errors:
             _logger.error(f"WSSH Error {operation}: {errors}")
             raise UserError(f"WSSH Error exporting product {product.name}: {errors}")
-
+    
         if product_data and product_data.get("id"):
             shopify_product_gid = product_data["id"]
             shopify_product_id = shopify_product_gid.split("/")[-1]
@@ -1317,8 +1345,9 @@ class ProductTemplate(models.Model):
                     'odoo_id': product.id,
                     'shopify_instance_id': instance_id.id,
                 })
-            return shopify_product_gid
-        return None
+            # Devuelve también el id de la variante auto-creada
+            return shopify_product_gid, first_variant_id
+        return None, None
 
     def _prepare_shopify_single_product_variant_bulk_data(self, variant, instance_id, option_attr_lines):
         """Prepara cada variante para bulk create GraphQL usando optionName (sin sku/inventoryManagement en la raíz)."""
@@ -1341,8 +1370,8 @@ class ProductTemplate(models.Model):
         return result
 
 
-    def _shopify_graphql_variants_bulk_create(self, instance_id, product_gid, variant_inputs):
-        """Llama a productVariantsBulkCreate en Shopify."""
+    def _shopify_graphql_variants_bulk_create(self, instance_id, product_gid, variant_inputs, first_variant_id=None, first_variant_sku=None, first_variant_barcode=None):
+        """Llama a productVariantsBulkCreate en Shopify y actualiza la primera variante auto-creada."""
         graphql_url = f"https://{instance_id.shopify_host}.myshopify.com/admin/api/{instance_id.shopify_version}/graphql.json"
         headers = {
             "X-Shopify-Access-Token": instance_id.shopify_shared_secret,
@@ -1366,21 +1395,45 @@ class ProductTemplate(models.Model):
             "productId": product_gid,
             "variants": variant_inputs
         }
-        _logger.debug("WSSH DEBUG Bulk GraphQL mutation: %s", mutation)
-        _logger.debug("WSSH DEBUG Bulk GraphQL endpoint: %s", graphql_url)
-        _logger.debug("WSSH DEBUG Bulk GraphQL variables: %s", json.dumps(variables, indent=2, default=str))
+        _logger.info("WSSH Bulk GraphQL mutation: %s", mutation)
+        _logger.info("WSSH Bulk GraphQL endpoint: %s", graphql_url)
+        _logger.info("WSSH Bulk GraphQL variables: %s", json.dumps(variables, indent=2, default=str))
 
         response = requests.post(graphql_url, headers=headers, json={
             "query": mutation,
             "variables": variables
         })
-        _logger.debug("WSSH DEBUG Bulk GraphQL HTTP status: %s", response.status_code)
-        _logger.debug("WSSH DEBUG Bulk GraphQL response text: %s", response.text)
+        _logger.info("WSSH Bulk GraphQL HTTP status: %s", response.status_code)
+        _logger.info("WSSH Bulk GraphQL response text: %s", response.text)
+
+        # Después de intentar crear todas, actualiza la primera variante auto-creada con su SKU/barcode correcto
+        if first_variant_id and (first_variant_sku or first_variant_barcode):
+            update_mutation = """
+            mutation productVariantUpdate($input: ProductVariantInput!) {
+              productVariantUpdate(input: $input) {
+                productVariant { id }
+                userErrors { field message }
+              }
+            }
+            """
+            update_input = {"id": first_variant_id}
+            if first_variant_sku:
+                update_input["sku"] = first_variant_sku
+            if first_variant_barcode:
+                update_input["barcode"] = first_variant_barcode
+            _logger.info("WSSH Updating first variant input: %s", json.dumps(update_input))
+            update_response = requests.post(graphql_url, headers=headers, json={
+                "query": update_mutation,
+                "variables": {"input": update_input}
+            })
+            _logger.info("WSSH Updated first variant response: %s", update_response.text)
+
         try:
             return response.json()
         except Exception as ex:
             _logger.error("WSSH ERROR al decodificar JSON de respuesta GraphQL (bulk): %s", ex)
             raise UserError("WSSH ERROR: respuesta no JSON de Shopify (bulk): %s" % response.text)
+
 
 
     def _handle_graphql_variant_bulk_response(self, product, instance_id, response_json):
@@ -1418,16 +1471,24 @@ class ProductTemplate(models.Model):
             other_pos += 1
         return [pos_map[pos] for pos in sorted(pos_map)]
 
-    def _exclude_first_variant(self, variant_inputs, option_attr_lines):
-        """Excluye la variante que corresponde a la primera combinación de cada opción."""
-        # Encuentra el primer valor de cada opción en el orden
+    def _split_first_combo_variant(self, product, variant_inputs, option_attr_lines):
+        """
+        Separa la variante correspondiente a la primera combinación de cada opción
+        y devuelve (first_variant_tuple, rest_variant_inputs).
+        first_variant_tuple: (variant_obj, variant_input_dict)
+        rest_variant_inputs: lista de variant_input_dict para bulk create
+        """
         first_combo = tuple(line.value_ids[0].name for line in option_attr_lines)
-        filtered = []
-        for v in variant_inputs:
-            combo = tuple(opt['name'] for opt in v['optionValues'])
-            if combo != first_combo:
-                filtered.append(v)
-        return filtered
+        first_variant = None
+        rest_variants = []
+        for v, vinp in zip(product.product_variant_ids, variant_inputs):
+            combo = tuple(opt['name'] for opt in vinp['optionValues'])
+            if combo == first_combo and not first_variant:
+                first_variant = (v, vinp)
+            else:
+                rest_variants.append(vinp)
+        return first_variant, rest_variants
+
 
 # inherit class product.attribute and add fields for shopify
 class ProductAttribute(models.Model):
