@@ -1586,7 +1586,7 @@ class ProductTemplate(models.Model):
         _logger.info("WSSH Actualización primera variante OK por REST: %s", response.text)
         return response.json()   
     
-    def _gid_to_id(gid):
+    def _gid_to_id(self,gid):
         # Espera una cadena tipo "gid://shopify/ProductVariant/51258548519258"
         return gid.split('/')[-1]
 
