@@ -1202,7 +1202,7 @@ class ProductTemplate(models.Model):
                 _logger.error(f"WSSH Failed to write {field_name} after {max_retries} retries: {str(e)}")
                 raise UserError(f"Error de concurrencia persistente al escribir {field_name}: {str(e)}")
                 
-     def _export_single_product_v2(self, product, instance_id, headers, update):
+    def _export_single_product_v2(self, product, instance_id, headers, update):
         """Exporta un producto usando GraphQL (coexistiendo con versión anterior REST)."""
         _logger.info("WSSH Dentro Exporta no split v2")
         option_attr_lines = self._get_option_attr_lines(product, instance_id)
