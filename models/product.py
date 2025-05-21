@@ -1512,7 +1512,7 @@ class ProductTemplate(models.Model):
         # Extensión: guarda mapping Odoo<->Shopify si es necesario
             
         
-   def _get_shopify_variant_combo_map(self, product, variant_gids, option_attr_lines, graphql_response):
+    def _get_shopify_variant_combo_map(self, product, variant_gids, option_attr_lines, graphql_response):
         """
         Mapea cada combinación de opciones (tuple) con su GID de Shopify.
         Esto permite identificar la primera variante y todas las demás para update/create.
