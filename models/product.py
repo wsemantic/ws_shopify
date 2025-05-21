@@ -98,7 +98,6 @@ class ProductProduct(models.Model):
     )
 
 
-
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
 
@@ -108,6 +107,13 @@ class ProductTemplate(models.Model):
         digits='Product Price'
     )
 
+    shopify_product_map_ids = fields.One2many(
+        "shopify.product.template.map",
+        "odoo_id",
+        string="Shopify Product Mappings",
+        help="Mappings to Shopify products across multiple websites"
+    )
+    
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
@@ -1201,56 +1207,61 @@ class ProductTemplate(models.Model):
                     continue
                 _logger.error(f"WSSH Failed to write {field_name} after {max_retries} retries: {str(e)}")
                 raise UserError(f"Error de concurrencia persistente al escribir {field_name}: {str(e)}")
-                
-    def _export_single_product_v2(self, product, instance_id, headers, update):
+
+     def _export_single_product_v2(self, product, instance_id, headers, update):
         """
         Exporta o actualiza un producto 'single' en Shopify usando GraphQL.
-        En update: actualiza SOLO precios de variantes ya creadas en Shopify.
-        En creación: actualiza SKU/barcode/price SOLO para la primera variante autogenerada, y crea el resto en bulk.
+        - Si el producto NO existe en Shopify: lo crea siempre.
+        - Si el producto YA existe y update=True: actualiza SOLO precios de variantes.
+        - Si el producto YA existe y update=False: no hace nada.
+        En creación, actualiza SKU/barcode/price SOLO para la primera variante autogenerada (REST), y crea el resto en bulk.
         """
         _logger.info("WSSH Dentro Exporta no split v2")
         option_attr_lines = self._get_option_attr_lines(product, instance_id)
         _logger.info("WSSH Single p1")
-        product_input = self._build_graphql_product_input_v2(product, instance_id, option_attr_lines, update)
+        
+        product_map = product.shopify_product_map_ids.filtered(lambda m: m.shopify_instance_id.id == instance_id.id)
+        shopify_product_exists = bool(product_map and product_map.web_product_id)
+        need_create = not shopify_product_exists
+        need_update = (shopify_product_exists and update)
+        
+        # Construcción del payload para la llamada GraphQL
+        product_input = self._build_graphql_product_input_v2(product, instance_id, option_attr_lines, update=need_update)
         _logger.info("WSSH product_input (GraphQL): %s", json.dumps(product_input, indent=2, default=str))
         _logger.info("WSSH Single p2")
-        graphql_response = self._shopify_graphql_call_v2(instance_id, product_input, update)
+        graphql_response = self._shopify_graphql_call_v2(instance_id, product_input, update=need_update)
         _logger.info("WSSH graphql_response: %s", json.dumps(graphql_response, indent=2, default=str))
         _logger.info("WSSH Single p3")
         product_id, variant_gids = self._handle_graphql_product_response_v2(
-            product, instance_id, graphql_response, update
+            product, instance_id, graphql_response, update=need_update
         )
         _logger.info("WSSH Single p4")
-
+    
         if not product_id:
+            _logger.error("WSSH No se obtuvo product_id tras la creación/update del producto. Abortando exportación.")
             return
-
+    
         variant_inputs = [
             self._prepare_shopify_single_product_variant_bulk_data(v, instance_id, option_attr_lines)
             for v in product.product_variant_ids if v.default_code
         ]
-
+    
         combo_to_gid = self._get_shopify_variant_combo_map(product, variant_gids, option_attr_lines, graphql_response)
-        # Determina la combinación de la primera variante (según el orden de option_attr_lines y value_ids[0])
         first_combo = tuple(line.value_ids[0].name for line in option_attr_lines) if option_attr_lines else ()
-
-        updates_bulk = []
-        if not update:
-            # CREACIÓN: actualizar solo la primera variante autogenerada, crear el resto
+    
+        if need_create:
+            # CREACIÓN: Actualiza la primera variante (solo price, sku, barcode) por REST.
             for v, vinp in zip(product.product_variant_ids, variant_inputs):
                 combo = tuple(opt['name'] for opt in vinp['optionValues'])
                 gid = combo_to_gid.get(combo)
                 if combo == first_combo and gid:
-                    update_data = {
-                        "id": gid,
-                        "sku": v.default_code or "",
-                        "barcode": v.barcode or "",
-                        "price": vinp.get("price", "")
-                    }
-                    updates_bulk.append(update_data)
-                    _logger.info("WSSH Actualizando primera variante: %s", json.dumps(update_data))
-            if updates_bulk:
-                self._shopify_graphql_variants_bulk_update(instance_id, product_id, updates_bulk)
+                    self._shopify_update_first_variant_rest(
+                        instance_id,
+                        gid,
+                        v.default_code or "",
+                        v.barcode or "",
+                        vinp.get("price", "")
+                    )
             # Crea el resto de variantes (las que no sean la primera)
             create_variants = []
             for v, vinp in zip(product.product_variant_ids, variant_inputs):
@@ -1262,20 +1273,23 @@ class ProductTemplate(models.Model):
                 bulk_response = self._shopify_graphql_variants_bulk_create(instance_id, product_id, create_variants)
                 _logger.info("WSSH Bulk GraphQL response: %s", json.dumps(bulk_response, indent=2, default=str))
                 self._handle_graphql_variant_bulk_response(product, instance_id, bulk_response)
-        else:
+        elif need_update:
             # UPDATE: actualiza SOLO precios de todas las variantes
+            updates_bulk = []
             for v, vinp in zip(product.product_variant_ids, variant_inputs):
                 combo = tuple(opt['name'] for opt in vinp['optionValues'])
                 gid = combo_to_gid.get(combo)
                 if gid:
-                    update_data = {
+                    updates_bulk.append({
                         "id": gid,
                         "price": vinp.get("price", "")
-                    }
-                    updates_bulk.append(update_data)
+                    })
             if updates_bulk:
                 _logger.info("WSSH BulkUpdate precios variants: %s", json.dumps(updates_bulk, indent=2, default=str))
                 self._shopify_graphql_variants_bulk_update(instance_id, product_id, updates_bulk)
+        else:
+            _logger.info("WSSH Producto ya existe y update=False: no se hace ninguna actualización de variantes.")
+
 
     def _build_graphql_product_input_v2(self, product, instance_id, option_attr_lines, update):
         """Construye payload GraphQL para crear el producto con productOptions."""
@@ -1548,7 +1562,33 @@ class ProductTemplate(models.Model):
             other_pos += 1
         return [pos_map[pos] for pos in sorted(pos_map)]        
         
-
+    def _shopify_update_first_variant_rest(self, instance_id, variant_gid, sku, barcode, price):
+        """Actualiza la primera variante (SKU/barcode/price) por REST, ya que GraphQL no lo soporta."""
+        variant_id = self._gid_to_id(variant_gid)
+        url = f"https://{instance_id.shopify_host}.myshopify.com/admin/api/{instance_id.shopify_version}/variants/{variant_id}.json"
+        headers = {
+            "X-Shopify-Access-Token": instance_id.shopify_shared_secret,
+            "Content-Type": "application/json"
+        }
+        data = {
+            "variant": {
+                "id": int(variant_id),
+                "sku": sku,
+                "barcode": barcode,
+                "price": price
+            }
+        }
+        _logger.info("WSSH Actualizando primera variante por REST: %s", json.dumps(data))
+        response = requests.put(url, headers=headers, data=json.dumps(data))
+        if not response.ok:
+            _logger.error(f"WSSH Error actualizando primera variante REST: {response.text}")
+            raise UserError(f"Error actualizando primera variante REST: {response.text}")
+        _logger.info("WSSH Actualización primera variante OK por REST: %s", response.text)
+        return response.json()   
+    
+    def _gid_to_id(gid):
+        # Espera una cadena tipo "gid://shopify/ProductVariant/51258548519258"
+        return gid.split('/')[-1]
 
 # inherit class product.attribute and add fields for shopify
 class ProductAttribute(models.Model):
@@ -1566,4 +1606,5 @@ class ProductAttributeValue(models.Model):
     is_shopify = fields.Boolean(string='Is Shopify?')
     shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance')
     shopify_id = fields.Char(string='Shopify Attribute Value Id')
+    
     
