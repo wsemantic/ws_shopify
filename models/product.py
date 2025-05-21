@@ -1206,10 +1206,13 @@ class ProductTemplate(models.Model):
         """Exporta un producto usando GraphQL (coexistiendo con versión anterior REST)."""
         _logger.info("WSSH Single p1")
         option_attr_lines = self._get_option_attr_lines(product, instance_id)
+        _logger.debug("WSSH DEBUG option_attr_lines: %s", option_attr_lines)
         _logger.info("WSSH Single p2")
         product_input = self._build_graphql_product_input(product, instance_id, option_attr_lines, update)
+        _logger.debug("WSSH DEBUG product_input (GraphQL): %s", json.dumps(product_input, indent=2, default=str))
         _logger.info("WSSH Single p3")
         graphql_response = self._shopify_graphql_call(instance_id, product_input, update)
+        _logger.debug("WSSH DEBUG graphql_response: %s", json.dumps(graphql_response, indent=2, default=str))
         _logger.info("WSSH Single p4")
         self._handle_graphql_product_response(product, instance_id, graphql_response, update)
 
@@ -1275,7 +1278,6 @@ class ProductTemplate(models.Model):
             "Content-Type": "application/json",
             "Accept": "application/json"
         }
-
         mutation = """
         mutation product%s($input: ProductInput!) {
             product%s(input: $input) {
@@ -1284,39 +1286,51 @@ class ProductTemplate(models.Model):
             }
         }
         """ % ("Update" if update else "Create", "Update" if update else "Create")
-
+        _logger.debug("WSSH DEBUG GraphQL mutation: %s", mutation)
+        _logger.debug("WSSH DEBUG GraphQL endpoint: %s", graphql_url)
+        _logger.debug("WSSH DEBUG GraphQL headers: %s", headers)
+        _logger.debug("WSSH DEBUG GraphQL variables: %s", json.dumps({"input": product_input}, indent=2, default=str))
+    
         response = requests.post(graphql_url, headers=headers, json={
             "query": mutation,
             "variables": {"input": product_input}
         })
-        return response.json()
+        _logger.debug("WSSH DEBUG Raw GraphQL HTTP status: %s", response.status_code)
+        _logger.debug("WSSH DEBUG Raw GraphQL response text: %s", response.text)
+        try:
+            return response.json()
+        except Exception as ex:
+            _logger.error("WSSH ERROR al decodificar JSON de respuesta GraphQL: %s", ex)
+            raise UserError("WSSH ERROR: respuesta no JSON de Shopify: %s" % response.text)
 
     def _handle_graphql_product_response(self, product, instance_id, response_json, update):
         """Procesa respuesta de Shopify GraphQL."""
         operation = "productUpdate" if update else "productCreate"
+        _logger.debug("WSSH DEBUG parsed response_json: %s", json.dumps(response_json, indent=2, default=str))
         data = response_json.get("data", {}).get(operation, {})
         errors = data.get("userErrors", [])
         product_data = data.get("product")
-
+    
         if errors:
             _logger.error(f"WSSH Error {operation}: {errors}")
             raise UserError(f"WSSH Error exporting product {product.name}: {errors}")
-
+    
         if product_data and product_data.get("id"):
             shopify_product_gid = product_data["id"]
             shopify_product_id = shopify_product_gid.split("/")[-1]
-
+    
             product_map = self.env['shopify.product.template.map'].sudo().search([
                 ('odoo_id', '=', product.id),
                 ('shopify_instance_id', '=', instance_id.id),
             ], limit=1)
-
+    
             if not product_map:
                 self.env['shopify.product.template.map'].create({
                     'web_product_id': shopify_product_id,
                     'odoo_id': product.id,
                     'shopify_instance_id': instance_id.id,
                 })
+    
 
     def _prepare_shopify_single_product_variant_data(self, variant, instance_id, option_attr_lines):
         """Formatea variante para GraphQL."""
