@@ -1204,7 +1204,7 @@ class ProductTemplate(models.Model):
                 
     def _export_single_product_v2(self, product, instance_id, headers, update):
         """Exporta un producto usando GraphQL (coexistiendo con versión anterior REST)."""
-        _logger.info("WSSH Single p1")
+        _logger.info("WSSH Single p1.0")
         option_attr_lines = self._get_option_attr_lines(product, instance_id)
         _logger.debug("WSSH DEBUG option_attr_lines: %s", option_attr_lines)
         _logger.info("WSSH Single p2")
