@@ -537,7 +537,7 @@ class ProductTemplate(models.Model):
         
             for product in products_to_export:                
                 if not instance_id.split_products_by_color:
-                                                                                 
+                    _logger.info("WSSH Exporta no split v2")                 
                     self._export_single_product_v2(product, instance_id, headers, update)
                     processed_count += 1  # Cambio: Incrementar contador
                     continue
@@ -545,7 +545,7 @@ class ProductTemplate(models.Model):
                 color_line = product.attribute_line_ids.filtered(
                     lambda l: l.attribute_id.name.lower() == 'color')
                 if not color_line:
-                                                                                 
+                    _logger.info("WSSH Exporta no color line v2")                     
                     self._export_single_product_v2(product, instance_id, headers, update)
                     processed_count += 1  # Cambio: Incrementar contador
                     continue
@@ -1204,9 +1204,13 @@ class ProductTemplate(models.Model):
                 
     def _export_single_product_v2(self, product, instance_id, headers, update):
         """Exporta un producto usando GraphQL (coexistiendo con versión anterior REST)."""
+        _logger.info("WSSH Single p1")
         option_attr_lines = self._get_option_attr_lines(product, instance_id)
+        _logger.info("WSSH Single p2")
         product_input = self._build_graphql_product_input(product, instance_id, option_attr_lines, update)
+        _logger.info("WSSH Single p3")
         graphql_response = self._shopify_graphql_call(instance_id, product_input, update)
+        _logger.info("WSSH Single p4")
         self._handle_graphql_product_response(product, instance_id, graphql_response, update)
 
     def _get_option_attr_lines(self, product, instance_id):
