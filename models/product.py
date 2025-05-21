@@ -1217,7 +1217,7 @@ class ProductTemplate(models.Model):
         _logger.info("WSSH Single p4")
         if product_id:
             variant_inputs = [
-                self._prepare_shopify_single_product_variant_bulk_data(v, product_id, instance_id, option_attr_lines)
+                self._prepare_shopify_single_product_variant_bulk_data(v, instance_id, option_attr_lines)
                 for v in product.product_variant_ids if v.default_code
             ]
             _logger.info("WSSH DEBUG variant_inputs (bulk): %s", json.dumps(variant_inputs, indent=2, default=str))
@@ -1364,21 +1364,22 @@ class ProductTemplate(models.Model):
             "productId": product_gid,
             "variants": variant_inputs
         }
-        _logger.info("WSSH DEBUG Bulk GraphQL mutation: %s", mutation)
-        _logger.info("WSSH DEBUG Bulk GraphQL endpoint: %s", graphql_url)
-        _logger.info("WSSH DEBUG Bulk GraphQL variables: %s", json.dumps(variables, indent=2, default=str))
+        _logger.debug("WSSH DEBUG Bulk GraphQL mutation: %s", mutation)
+        _logger.debug("WSSH DEBUG Bulk GraphQL endpoint: %s", graphql_url)
+        _logger.debug("WSSH DEBUG Bulk GraphQL variables: %s", json.dumps(variables, indent=2, default=str))
 
         response = requests.post(graphql_url, headers=headers, json={
             "query": mutation,
             "variables": variables
         })
-        _logger.info("WSSH DEBUG Bulk GraphQL HTTP status: %s", response.status_code)
-        _logger.info("WSSH DEBUG Bulk GraphQL response text: %s", response.text)
+        _logger.debug("WSSH DEBUG Bulk GraphQL HTTP status: %s", response.status_code)
+        _logger.debug("WSSH DEBUG Bulk GraphQL response text: %s", response.text)
         try:
             return response.json()
         except Exception as ex:
             _logger.error("WSSH ERROR al decodificar JSON de respuesta GraphQL (bulk): %s", ex)
             raise UserError("WSSH ERROR: respuesta no JSON de Shopify (bulk): %s" % response.text)
+
 
     def _handle_graphql_variant_bulk_response(self, product, instance_id, response_json):
         """Procesa respuesta de Shopify GraphQL (bulk variants)."""
