@@ -589,7 +589,7 @@ class ProductTemplate(models.Model):
                         lambda v: not v.shopify_variant_map_ids.filtered(lambda m: m.shopify_instance_id == instance_id)
                     )
 
-                    # Construcción de option_attr_lines: primero color (fijo), luego talla, mantiene equivalencia con el comportamiento original
+                    # Construcción de option_attr_lines: primero color (fijo), luego tallas, mantiene equivalencia con el comportamiento original
                     size_line = next((l for l in product.attribute_line_ids if l.attribute_id.name.lower() in ('size', 'talla')), None)
                     option_attr_lines = []
                     color_fixed_line = None
@@ -1153,7 +1153,7 @@ class ProductTemplate(models.Model):
 
             # Consultar las tablas de mapeo en Odoo (igual que antes)
             template_map = self.env['shopify.product.template.map'].search([
-                ('web_product_id', '=', relevant_shopify_product_id),
+                ('web_product_id', '=', relevant_shopify_product_id),   
                 ('shopify_instance_id', '=', shopify_instance.id)
             ], limit=1)
 
@@ -1225,10 +1225,13 @@ class ProductTemplate(models.Model):
     def _export_single_product_v2(self, product, instance_id, headers, update):
         """
         Exporta o actualiza un producto 'single' en Shopify usando GraphQL.
-        - Si el producto NO existe en Shopify: lo crea siempre.
-        - Si el producto YA existe y update=True: actualiza SOLO precios de variantes.
-        - Si el producto YA existe y update=False: no hace nada.
-        En creación, actualiza SKU/barcode/price SOLO para la primera variante autogenerada (REST), y crea el resto en bulk.
+        
+        Lógica de update:
+        - Si el producto NO existe en Shopify: se crea siempre (independiente de update)
+        - Si el producto YA existe y update=True: actualiza solo precios
+        - Si el producto YA existe y update=False: no hace nada
+        
+        Para creación usa GraphQL porque el modo 'no split' puede superar las 100 variantes límite de REST.
         """
         _logger.info("WSSH Dentro Exporta no split v2")
         option_attr_lines = self._get_option_attr_lines(product, instance_id)
@@ -1236,23 +1239,35 @@ class ProductTemplate(models.Model):
         
         product_map = product.shopify_product_map_ids.filtered(lambda m: m.shopify_instance_id.id == instance_id.id)
         shopify_product_exists = bool(product_map and product_map.web_product_id)
-        need_create = not shopify_product_exists
-        need_update = (shopify_product_exists and update)
+        
+        if shopify_product_exists and not update:
+            # Producto existe y usuario no quiere actualizar -> no hacer nada
+            _logger.info("WSSH Producto ya existe y update=False: no se hace nada.")
+            return
+        
+        if shopify_product_exists and update:
+            # Producto existe y usuario quiere actualizar -> actualizar solo precios
+            _logger.info("WSSH Producto existe y update=True: actualizando solo precios")
+            self._update_existing_product_prices_only(product, instance_id, product_map)
+            return
+        
+        # Producto NO existe -> crear siempre (independiente del valor de update)
+        _logger.info("WSSH Producto no existe: creando nuevo producto")
         
         # Construcción del payload para la llamada GraphQL
-        product_input = self._build_graphql_product_input_v2(product, instance_id, option_attr_lines, update=need_update)
+        product_input = self._build_graphql_product_input_v2(product, instance_id, option_attr_lines)
         _logger.info("WSSH product_input (GraphQL): %s", json.dumps(product_input, indent=2, default=str))
         _logger.info("WSSH Single p2")
-        graphql_response = self._shopify_graphql_call_v2(instance_id, product_input, update=need_update)
+        graphql_response = self._shopify_graphql_call_v2(instance_id, product_input)
         _logger.info("WSSH graphql_response: %s", json.dumps(graphql_response, indent=2, default=str))
         _logger.info("WSSH Single p3")
-        product_id, variant_gids = self._handle_graphql_product_response_v2(
-            product, instance_id, graphql_response, update=need_update
+        product_id, basic_variants = self._handle_graphql_product_response_v2(
+            product, instance_id, graphql_response
         )
         _logger.info("WSSH Single p4")
     
         if not product_id:
-            _logger.error("WSSH No se obtuvo product_id tras la creación/update del producto. Abortando exportación.")
+            _logger.error("WSSH No se obtuvo product_id tras la creación del producto. Abortando exportación.")
             return
     
         variant_inputs = [
@@ -1260,52 +1275,44 @@ class ProductTemplate(models.Model):
             for v in product.product_variant_ids if v.default_code
         ]
     
-        combo_to_gid = self._get_shopify_variant_combo_map(product, variant_gids, option_attr_lines, graphql_response)
+        combo_to_variant = self._get_shopify_variant_combo_map(product, basic_variants, option_attr_lines, graphql_response)
         first_combo = tuple(line.value_ids[0].name for line in option_attr_lines) if option_attr_lines else ()
     
-        if need_create:
-            # CREACIÓN: Actualiza la primera variante (solo price, sku, barcode) por REST.
-            for v, vinp in zip(product.product_variant_ids, variant_inputs):
-                combo = tuple(opt['name'] for opt in vinp['optionValues'])
-                gid = combo_to_gid.get(combo)
-                if combo == first_combo and gid:
-                    self._shopify_update_first_variant_rest(
-                        instance_id,
-                        gid,
-                        v.default_code or "",
-                        v.barcode or "",
-                        vinp.get("price", "")
-                    )
-            # Crea el resto de variantes (las que no sean la primera)
-            create_variants = []
-            for v, vinp in zip(product.product_variant_ids, variant_inputs):
-                combo = tuple(opt['name'] for opt in vinp['optionValues'])
-                if combo != first_combo:
-                    create_variants.append(vinp)
-            if create_variants:
-                _logger.info("WSSH Bulk create variantes: %s", json.dumps(create_variants, indent=2, default=str))
-                bulk_response = self._shopify_graphql_variants_bulk_create(instance_id, product_id, create_variants)
-                _logger.info("WSSH Bulk GraphQL response: %s", json.dumps(bulk_response, indent=2, default=str))
-                self._handle_graphql_variant_bulk_response(product, instance_id, bulk_response)
-        elif need_update:
-            # UPDATE: actualiza SOLO precios de todas las variantes
-            updates_bulk = []
-            for v, vinp in zip(product.product_variant_ids, variant_inputs):
-                combo = tuple(opt['name'] for opt in vinp['optionValues'])
-                gid = combo_to_gid.get(combo)
-                if gid:
-                    updates_bulk.append({
-                        "id": gid,
-                        "price": vinp.get("price", "")
-                    })
-            if updates_bulk:
-                _logger.info("WSSH BulkUpdate precios variants: %s", json.dumps(updates_bulk, indent=2, default=str))
-                self._shopify_graphql_variants_bulk_update(instance_id, product_id, updates_bulk)
+        # CREACIÓN: Actualiza la primera variante (solo price, sku, barcode) por REST.
+        for v, vinp in zip(product.product_variant_ids, variant_inputs):
+            combo = tuple(opt['name'] for opt in vinp['optionValues'])
+            variant_info = combo_to_variant.get(combo)
+            if combo == first_combo and variant_info:
+                self._shopify_update_first_variant_rest(
+                    instance_id,
+                    variant_info["id"],
+                    v.default_code or "",
+                    v.barcode or "",
+                    vinp.get("price", "")
+                )
+        # Crea el resto de variantes (las que no sean la primera)
+        create_variants = []
+        for v, vinp in zip(product.product_variant_ids, variant_inputs):
+            combo = tuple(opt['name'] for opt in vinp['optionValues'])
+            if combo != first_combo:
+                create_variants.append(vinp)
+        if create_variants:
+            _logger.info("WSSH Bulk create variantes: %s", json.dumps(create_variants, indent=2, default=str))
+            bulk_response = self._shopify_graphql_variants_bulk_create(instance_id, product_id, create_variants)
+            _logger.info("WSSH Bulk GraphQL response: %s", json.dumps(bulk_response, indent=2, default=str))
+            # Obtener las variantes creadas de la respuesta bulk
+            bulk_created_variants = self._handle_graphql_variant_bulk_response(product, instance_id, bulk_response)
+            # Combinar todas las variantes para actualizar mapas
+            all_variants = basic_variants + bulk_created_variants
         else:
-            _logger.info("WSSH Producto ya existe y update=False: no se hace ninguna actualización de variantes.")
+            all_variants = basic_variants
+                
+        # CRÍTICO: Actualizar mapas usando la información completa obtenida de GraphQL
+        _logger.info("WSSH Actualizando mapas con %d variantes desde respuestas GraphQL", len(all_variants))
+        self._update_variant_ids_from_graphql_data(product.product_variant_ids, all_variants, instance_id)
 
 
-    def _build_graphql_product_input_v2(self, product, instance_id, option_attr_lines, update):
+    def _build_graphql_product_input_v2(self, product, instance_id, option_attr_lines):
         """Construye payload GraphQL para crear el producto con productOptions."""
         product_options = []
         for line in option_attr_lines:
@@ -1323,20 +1330,10 @@ class ProductTemplate(models.Model):
             "status": "DRAFT",
             "productOptions": product_options
         }
-        if update:
-            product_map = self.env['shopify.product.template.map'].sudo().search([
-                ('odoo_id', '=', product.id),
-                ('shopify_instance_id', '=', instance_id.id),
-            ], limit=1)
-            if product_map:
-                shopify_id = product_map.web_product_id
-                if not str(shopify_id).startswith("gid://"):
-                    shopify_id = f"gid://shopify/Product/{shopify_id}"
-                product_input["id"] = shopify_id
         return product_input
 
-    def _shopify_graphql_call_v2(self, instance_id, product_input, update):
-        """Ejecuta llamada GraphQL a Shopify para crear/actualizar producto (sin variantes)."""
+    def _shopify_graphql_call_v2(self, instance_id, product_input):
+        """Ejecuta llamada GraphQL a Shopify para crear producto."""
         graphql_url = f"https://{instance_id.shopify_host}.myshopify.com/admin/api/{instance_id.shopify_version}/graphql.json"
         headers = {
             "X-Shopify-Access-Token": instance_id.shopify_shared_secret,
@@ -1344,15 +1341,16 @@ class ProductTemplate(models.Model):
             "Accept": "application/json"
         }
         mutation = """
-        mutation product%s($input: ProductInput!) {
-            product%s(input: $input) {
+        mutation productCreate($input: ProductInput!) {
+            productCreate(input: $input) {
                 product { 
                     id
-                    variants(first: 1) {
+                    variants(first: 250) {
                         edges {
                             node {
                                 id
                                 selectedOptions { name value }
+                                inventoryItem { id }
                             }
                         }
                     }
@@ -1360,7 +1358,7 @@ class ProductTemplate(models.Model):
                 userErrors { field message }
             }
         }
-        """ % ("Update" if update else "Create", "Update" if update else "Create")
+        """
         _logger.info("WSSH DEBUG GraphQL mutation: %s", mutation)
         _logger.info("WSSH DEBUG GraphQL endpoint: %s", graphql_url)
         _logger.info("WSSH DEBUG GraphQL headers: %s", headers)
@@ -1377,29 +1375,31 @@ class ProductTemplate(models.Model):
             _logger.error("WSSH ERROR al decodificar JSON de respuesta GraphQL: %s", ex)
             raise UserError("WSSH ERROR: respuesta no JSON de Shopify: %s" % response.text)
 
-    def _handle_graphql_product_response_v2(self, product, instance_id, response_json, update):
+    def _handle_graphql_product_response_v2(self, product, instance_id, response_json):
         """
-        Procesa la respuesta GraphQL de creación/actualización de producto.
-        Devuelve GID de producto y lista ordenada de GIDs de variantes.
+        Procesa la respuesta GraphQL de creación de producto.
+        Devuelve GID de producto y lista básica de variantes.
         """
-        operation = "productUpdate" if update else "productCreate"
         _logger.info("WSSH DEBUG parsed response_json: %s", json.dumps(response_json, indent=2, default=str))
-        data = response_json.get("data", {}).get(operation, {})
+        data = response_json.get("data", {}).get("productCreate", {})
         errors = data.get("userErrors", [])
         product_data = data.get("product")
-        variant_gids = []
+        basic_variants = []
+        
         if product_data and product_data.get("variants", {}).get("edges"):
-            # Obtén todos los GIDs en orden
-            variant_gids = [
-                {
-                    "id": edge["node"]["id"],
-                    "selectedOptions": edge["node"]["selectedOptions"]
-                }
-                for edge in product_data["variants"]["edges"]
-            ]
+            # Obtener información básica de las variantes existentes (solo para mapping de opciones)
+            for edge in product_data["variants"]["edges"]:
+                variant_node = edge["node"]
+                basic_variants.append({
+                    "id": variant_node["id"],
+                    "selectedOptions": variant_node.get("selectedOptions", []),
+                    "inventory_item_id": variant_node.get("inventoryItem", {}).get("id", "").split("/")[-1] if variant_node.get("inventoryItem") else ""
+                })
+                
         if errors:
-            _logger.error(f"WSSH Error {operation}: {errors}")
+            _logger.error(f"WSSH Error productCreate: {errors}")
             raise UserError(f"WSSH Error exporting product {product.name}: {errors}")
+            
         if product_data and product_data.get("id"):
             shopify_product_gid = product_data["id"]
             shopify_product_id = shopify_product_gid.split("/")[-1]
@@ -1413,7 +1413,7 @@ class ProductTemplate(models.Model):
                     'odoo_id': product.id,
                     'shopify_instance_id': instance_id.id,
                 })
-            return shopify_product_gid, variant_gids
+            return shopify_product_gid, basic_variants
         return None, []
         
     def _prepare_shopify_single_product_variant_bulk_data(self, variant, instance_id, option_attr_lines):
@@ -1452,6 +1452,10 @@ class ProductTemplate(models.Model):
             productVariantsBulkCreate(productId: $productId, variants: $variants) {
                 productVariants {
                     id
+                    sku
+                    barcode
+                    selectedOptions { name value }
+                    inventoryItem { id }
                 }
                 userErrors {
                     field
@@ -1527,29 +1531,49 @@ class ProductTemplate(models.Model):
 
     def _handle_graphql_variant_bulk_response(self, product, instance_id, response_json):
         """
-        Procesa la respuesta de productVariantsBulkCreate para guardar los GIDs de las variantes de Shopify.
+        Procesa la respuesta de productVariantsBulkCreate y devuelve las variantes creadas
+        con toda la información necesaria para los mapas.
         """
         if not response_json:
             _logger.error("WSSH: No response_json en bulk variant response")
-            return
-        user_errors = response_json.get("data", {}).get("productVariantsBulkCreate", {}).get("userErrors", [])
+            return []
+            
+        data = response_json.get("data", {}).get("productVariantsBulkCreate", {})
+        user_errors = data.get("userErrors", [])
+        
         if user_errors:
             _logger.error("WSSH Bulk create variants userErrors: %s", user_errors)
+            return []
         else:
             _logger.info("WSSH Bulk create variants sin errores")
-        # Extensión: guarda mapping Odoo<->Shopify si es necesario
+            
+        # Extraer información completa de las variantes creadas
+        created_variants = []
+        product_variants = data.get("productVariants", [])
+        
+        for variant in product_variants:
+            created_variants.append({
+                "id": variant.get("id", "").split("/")[-1],  # Convertir GID a ID numérico
+                "sku": variant.get("sku", ""),
+                "barcode": variant.get("barcode", ""),
+                "selectedOptions": variant.get("selectedOptions", []),
+                "inventory_item_id": variant.get("inventoryItem", {}).get("id", "").split("/")[-1] if variant.get("inventoryItem") else ""
+            })
+            
+        _logger.info("WSSH Bulk create procesó %d variantes", len(created_variants))
+        return created_variants
             
         
-    def _get_shopify_variant_combo_map(self, product, variant_gids, option_attr_lines, graphql_response):
+    def _get_shopify_variant_combo_map(self, product, basic_variants, option_attr_lines):
         """
-        Mapea cada combinación de opciones (tuple) con su GID de Shopify.
-        Esto permite identificar la primera variante y todas las demás para update/create.
+        Mapea cada combinación de opciones (tuple) con su información básica de Shopify.
+        Solo se usa para identificar la primera variante para REST update.
         """
-        combo_to_gid = {}
-        for v in variant_gids:
-            combo = tuple(opt['value'] for opt in v["selectedOptions"])
-            combo_to_gid[combo] = v["id"]
-        return combo_to_gid
+        combo_to_variant = {}
+        for variant in basic_variants:
+            combo = tuple(opt['value'] for opt in variant["selectedOptions"])
+            combo_to_variant[combo] = variant
+        return combo_to_variant
         
     def _get_option_attr_lines(self, product, instance_id):
         """
@@ -1576,9 +1600,12 @@ class ProductTemplate(models.Model):
             other_pos += 1
         return [pos_map[pos] for pos in sorted(pos_map)]        
         
-    def _shopify_update_first_variant_rest(self, instance_id, variant_gid, sku, barcode, price):
+    def _shopify_update_first_variant_rest(self, instance_id, variant_id, sku, barcode, price):
         """Actualiza la primera variante (SKU/barcode/price) por REST, ya que GraphQL no lo soporta."""
-        variant_id = self._gid_to_id(variant_gid)
+        # Si variant_id es un GID, convertirlo a ID numérico
+        if isinstance(variant_id, str) and variant_id.startswith("gid://"):
+            variant_id = variant_id.split('/')[-1]
+        
         url = f"https://{instance_id.shopify_host}.myshopify.com/admin/api/{instance_id.shopify_version}/variants/{variant_id}.json"
         headers = {
             "X-Shopify-Access-Token": instance_id.shopify_shared_secret,
@@ -1603,6 +1630,163 @@ class ProductTemplate(models.Model):
     def _gid_to_id(self,gid):
         # Espera una cadena tipo "gid://shopify/ProductVariant/51258548519258"
         return gid.split('/')[-1]
+        
+    def _update_variant_ids_from_graphql_data(self, odoo_variants, graphql_variants, instance_id):
+        """
+        Actualiza los mapas de variantes y stock usando los datos obtenidos directamente de GraphQL.
+        Esto evita tener que hacer una segunda consulta REST.
+        """
+        shopify_location = self.env['shopify.location'].sudo().search([
+            ('shopify_instance_id', '=', instance_id.id)
+        ], limit=1)
+        
+        for odoo_variant in odoo_variants:
+            matched_shopify_variant = None
+            # Buscar coincidencia usando SKU o barcode
+            for graphql_variant in graphql_variants:
+                shopify_sku = graphql_variant.get('sku', '')
+                shopify_barcode = graphql_variant.get('barcode', '')
+                odoo_sku = odoo_variant.default_code or ''
+                odoo_barcode = odoo_variant.barcode or ''
+                
+                if (shopify_sku and shopify_sku == odoo_sku) or \
+                   (shopify_barcode and shopify_barcode == odoo_barcode):
+                    matched_shopify_variant = graphql_variant
+                    break
+    
+            if matched_shopify_variant:
+                variant_id = matched_shopify_variant.get('id', '')
+                inventory_item_id = matched_shopify_variant.get('inventory_item_id', '')
+                
+                # Actualizar o crear el mapeo de la variante
+                variant_map = odoo_variant.shopify_variant_map_ids.filtered(
+                    lambda m: m.shopify_instance_id == instance_id
+                )
+                if variant_map:
+                    if variant_map.web_variant_id != variant_id:
+                        variant_map.write({'web_variant_id': variant_id})
+                        _logger.info("WSSH Updated variant map for Odoo variant (SKU: %s)", odoo_variant.default_code)
+                else:
+                    self.env['shopify.variant.map'].create({
+                        'web_variant_id': variant_id,
+                        'odoo_id': odoo_variant.id,
+                        'shopify_instance_id': instance_id.id,
+                    })
+                    _logger.info("WSSH Created variant map for Odoo variant (SKU: %s)", odoo_variant.default_code)
+    
+                # Actualizar o crear el mapeo de stock si tenemos inventory_item_id y location
+                if inventory_item_id and shopify_location:
+                    stock_map = self.env['shopify.stock.map'].sudo().search([
+                        ('odoo_id', '=', odoo_variant.id),
+                        ('shopify_instance_id', '=', instance_id.id),
+                        ('shopify_location_id', '=', shopify_location.id)
+                    ], limit=1)
+                                   
+                    if stock_map:                                                                                                                                        
+                        if stock_map.web_stock_id != inventory_item_id:
+                            stock_map.write({'web_stock_id': inventory_item_id})
+                            _logger.info("WSSH Updated stock map for Odoo variant (SKU: %s)", odoo_variant.default_code)                                                                                  
+                    else:
+                        self.env['shopify.stock.map'].create({
+                            'web_stock_id': inventory_item_id,
+                            'odoo_id': odoo_variant.id,
+                            'shopify_instance_id': instance_id.id,
+                            'shopify_location_id': shopify_location.id,
+                        })
+                        _logger.info("WSSH Created stock map for Odoo variant (SKU: %s)", odoo_variant.default_code)
+                elif not shopify_location:
+                    _logger.warning("WSSH No shopify.location found for instance %s", instance_id.name)
+                elif not inventory_item_id:
+                    _logger.warning("WSSH No inventory_item_id found for variant %s", matched_shopify_variant.get('sku', 'N/A'))
+            else:
+                sku = odoo_variant.default_code or 'N/A'
+                _logger.warning(f"WSSH No matching Shopify variant found for Odoo variant with SKU {sku}")   
+                     
+    def _get_complete_shopify_product(self, instance_id, product_gid):
+        """
+        MÉTODO OBSOLETO: Ya no es necesario hacer una segunda consulta porque obtenemos
+        toda la información necesaria directamente de las respuestas GraphQL.
+        Se mantiene por compatibilidad pero no se usa en el flujo principal.
+        """
+        _logger.warning("WSSH _get_complete_shopify_product llamado pero ya no es necesario - usar datos de GraphQL")
+        return None
+        
+    def _update_existing_product_prices_only(self, product, instance_id, product_map):
+        """
+        Actualiza solo los precios de un producto existente en Shopify.
+        Usado cuando update=True y el producto ya existe.
+        """
+        _logger.info("WSSH Actualizando solo precios para producto existente: %s", product.name)
+        
+        # Obtener todas las variantes existentes del producto en Shopify
+        existing_variants = self._get_existing_shopify_variants_for_price_update(instance_id, product_map.web_product_id)
+        if not existing_variants:
+            _logger.warning("WSSH No se pudieron obtener variantes existentes para actualizar precios")
+            return
+            
+        option_attr_lines = self._get_option_attr_lines(product, instance_id)
+        
+        # Preparar updates de precio para todas las variantes
+        price_updates = []
+        for odoo_variant in product.product_variant_ids:
+            if not odoo_variant.default_code:
+                continue
+                
+            # Buscar la variante correspondiente en Shopify por SKU o barcode
+            matching_shopify_variant = None
+            for shopify_variant in existing_variants:
+                if (shopify_variant.get('sku') == odoo_variant.default_code) or \
+                   (shopify_variant.get('barcode') == odoo_variant.barcode and odoo_variant.barcode):
+                    matching_shopify_variant = shopify_variant
+                    break
+                    
+            if matching_shopify_variant:
+                new_price = str(odoo_variant.product_tmpl_id.wholesale_price if not instance_id.prices_include_tax else odoo_variant.list_price)
+                price_updates.append({
+                    "id": matching_shopify_variant['id'],
+                    "price": new_price
+                })
+        
+        if price_updates:
+            _logger.info("WSSH Actualizando precios de %d variantes", len(price_updates))
+            product_gid = f"gid://shopify/Product/{product_map.web_product_id}"
+            self._shopify_graphql_variants_bulk_update(instance_id, product_gid, price_updates) 
+        else:
+            _logger.info("WSSH No se encontraron variantes para actualizar precios")
+            
+    def _get_existing_shopify_variants_for_price_update(self, instance_id, product_id):
+        """
+        Obtiene las variantes existentes de un producto en Shopify para actualización de precios.
+        Usa REST porque solo necesitamos sku, barcode, id y price para matching.
+        """
+        url = f"https://{instance_id.shopify_host}.myshopify.com/admin/api/{instance_id.shopify_version}/products/{product_id}/variants.json"
+        headers = {
+            "X-Shopify-Access-Token": instance_id.shopify_shared_secret,
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            response = requests.get(url, headers=headers)
+            if response.ok:
+                variants_data = response.json().get('variants', [])
+                # Convertir a formato compatible con GraphQL (GIDs)
+                formatted_variants = []
+                for variant in variants_data:
+                    formatted_variants.append({
+                        'id': f"gid://shopify/ProductVariant/{variant['id']}",
+                        'sku': variant.get('sku', ''),
+                        'barcode': variant.get('barcode', ''),
+                        'price': variant.get('price', '0')
+                    })
+                _logger.info("WSSH Obtenidas %d variantes existentes para actualización de precios", len(formatted_variants))
+                return formatted_variants
+            else:
+                _logger.error(f"WSSH Error obteniendo variantes existentes: {response.status_code} - {response.text}")
+                return []
+        except Exception as e:
+            _logger.error(f"WSSH Exception obteniendo variantes existentes: {str(e)}")
+            return []
+
 
 # inherit class product.attribute and add fields for shopify
 class ProductAttribute(models.Model):
@@ -1620,5 +1804,3 @@ class ProductAttributeValue(models.Model):
     is_shopify = fields.Boolean(string='Is Shopify?')
     shopify_instance_id = fields.Many2one('shopify.web', string='Shopify Instance')
     shopify_id = fields.Char(string='Shopify Attribute Value Id')
-    
-    
