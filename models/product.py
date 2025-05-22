@@ -520,13 +520,15 @@ class ProductTemplate(models.Model):
                 products_to_export = products
             else:
                 domain = [('is_published', '=', True)]
-                if instance_id.last_export_product or instance_id.last_export_product_id:
+                if instance_id.last_export_product_id and instance_id.last_export_product_id>0:
                     _logger.info(f"WSSH Starting product export por fecha {instance_id.last_export_product} instance {instance_id.name} atcolor {color_attribute}") 
-                    domain.append(('write_date', '>=', instance_id.last_export_product  or '1900-01-01 00:00:00'))
-                    domain.append(('id', '>', instance_id.last_export_product_id or 0))
+                    domain.append(('id', '>', instance_id.last_export_product_id))
+                elif  instance_id.last_export_product:
+                    _logger.info(f"WSSH Starting product export por fecha {instance_id.last_export_product} instance {instance_id.name} atcolor {color_attribute}") 
+                    domain.append(('write_date', '>=', instance_id.last_export_product  or '1900-01-01 00:00:00'))                    
 
                 order = "write_date asc, id asc"
-                if instance_id.last_export_stock_id > 0:
+                if instance_id.last_export_product_id and instance_id.last_export_product_id > 0:
                     order = "id asc"
                     _logger.info("WSSH Continuando desde ID %s (timeout previo)", instance_id.last_export_product_id)
                 else:
@@ -693,9 +695,9 @@ class ProductTemplate(models.Model):
                     export_update_time = product.write_date - datetime.timedelta(seconds=1)
                     break                                                                                                      
             
-                                                            
-            self.write_with_retry(instance_id, 'last_export_product', export_update_time)
+                                                           
             if processed_count < max_processed:
+                self.write_with_retry(instance_id, 'last_export_product', export_update_time)
                 self.write_with_retry(instance_id, 'last_export_product_id', 0)
             
     def _update_shopify_variant(self, variant, instance_id, headers, option_attr_lines):
