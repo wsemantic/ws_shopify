@@ -1771,67 +1771,93 @@ class ProductTemplate(models.Model):
             _logger.error("WSSH No se obtuvo product_id tras la creación del producto. Abortando exportación.")
             return False
 
-        # Preparar inputs de variantes de Odoo
-        variant_inputs = [
-            self._prepare_shopify_single_product_variant_bulk_data(v, instance_id, option_attr_lines)
-            for v in product.product_variant_ids if v.default_code
-        ]
+        _logger.info("WSSH Producto creado con %d variantes automáticas", len(basic_variants))
+                          
+                                                                                                     
+                                                                  
+         
 
-        # Mapear variantes existentes de Shopify (creadas automáticamente)
-        combo_to_variant = self._get_shopify_variant_combo_map_consistent(basic_variants)
+                                                                           
+                                                                                         
         
-        # Construir first_combo consistente con el resto del código
-        first_combo = self._build_first_combo_consistent(option_attr_lines) if option_attr_lines else ()
+                                                                    
+                                                                                                        
 
-        # Encontrar la variante de Odoo que corresponde a la primera combinación
-        first_odoo_variant = None
-        first_variant_input = None
+                                                                                 
+                                 
+                                  
         
-        for odoo_variant, variant_input in zip(product.product_variant_ids, variant_inputs):
-            if not odoo_variant.default_code:
-                continue
+                                                                                            
+                                             
+                        
                 
-            # Construir combo para esta variante de Odoo de manera consistente
-            odoo_combo = self._build_combo_from_variant_input(variant_input)
+                                                                              
+                                                                            
             
-            if odoo_combo == first_combo:
-                first_odoo_variant = odoo_variant
-                first_variant_input = variant_input
-                break
+                                         
+                                                 
+                                                   
+                     
 
-        # Actualizar la primera variante automática (la que creó Shopify automáticamente)
-        if first_odoo_variant and first_variant_input and first_combo in combo_to_variant:
-            variant_info = combo_to_variant[first_combo]
-            _logger.info("WSSH Actualizando primera variante automática con combo: %s", first_combo)
+        # Actualizar TODAS las variantes automáticas con datos de Odoo
+        for basic_variant in basic_variants:
+            variant_id = basic_variant["id"]
+            selected_options = basic_variant.get("selectedOptions", [])
             
-            self._shopify_update_first_variant_rest(
-                instance_id,
-                variant_info["id"],
-                first_odoo_variant.default_code or "",
-                first_odoo_variant.barcode or "",
-                first_variant_input.get("price", "")
+            # Buscar la variante de Odoo que corresponde a esta variante automática
+            matching_odoo_variant = self._find_matching_odoo_variant(
+                product, selected_options, option_attr_lines
+                                                      
+                                                 
+                                                    
             )
-
-        # Crear solo las variantes que NO son la primera (y que no existen ya en Shopify)
-        create_variants = []
-        create_odoo_variants = []
-        
-        for odoo_variant, variant_input in zip(product.product_variant_ids, variant_inputs):
-            if not odoo_variant.default_code:
-                continue
-                
-            odoo_combo = self._build_combo_from_variant_input(variant_input)
             
-            # Solo crear si no es la primera combinación Y no existe ya en Shopify
-            if odoo_combo != first_combo and odoo_combo not in combo_to_variant:
-                create_variants.append(variant_input)
-                create_odoo_variants.append(odoo_variant)
+            if matching_odoo_variant:
+                _logger.info("WSSH Actualizando variante automática ID %s con datos de variante Odoo SKU: %s", 
+                            variant_id, matching_odoo_variant.default_code)
+                
+                # Preparar datos para la actualización
+                price = str(matching_odoo_variant.product_tmpl_id.wholesale_price if not instance_id.prices_include_tax else matching_odoo_variant.list_price)
+                
+                # Actualizar la variante automática directamente por su ID conocido
+                self._shopify_update_first_variant_rest(
+                    instance_id,
+                    variant_id,
+                    matching_odoo_variant.default_code or "",
+                    matching_odoo_variant.barcode or "",
+                    price
+                )
+            else:
+                _logger.warning("WSSH No se encontró variante de Odoo correspondiente para variante automática ID %s", variant_id)
+
+        # Preparar variantes de Odoo que NO fueron actualizadas como automáticas
+        variants_to_create = []
+        updated_odoo_variants = set()
+        
+        # Marcar las variantes de Odoo que ya fueron actualizadas
+        for basic_variant in basic_variants:
+            selected_options = basic_variant.get("selectedOptions", [])
+                
+            matching_odoo_variant = self._find_matching_odoo_variant(
+                product, selected_options, option_attr_lines
+            )
+            if matching_odoo_variant:
+                updated_odoo_variants.add(matching_odoo_variant.id)
+
+        # Crear solo las variantes de Odoo que NO fueron actualizadas
+        for odoo_variant in product.product_variant_ids:
+            if odoo_variant.default_code and odoo_variant.id not in updated_odoo_variants:
+                variant_input = self._prepare_shopify_single_product_variant_bulk_data(
+                    odoo_variant, instance_id, option_attr_lines
+                )
+                variants_to_create.append(variant_input)
+                _logger.info("WSSH Variante a crear: SKU %s", odoo_variant.default_code)
 
         # Crear variantes restantes usando bulk create
         bulk_created_variants = []
-        if create_variants:
-            _logger.info("WSSH Creando %d variantes adicionales", len(create_variants))
-            bulk_response = self._shopify_graphql_variants_bulk_create(instance_id, product_id, create_variants)
+        if variants_to_create:
+            _logger.info("WSSH Creando %d variantes adicionales", len(variants_to_create))
+            bulk_response = self._shopify_graphql_variants_bulk_create(instance_id, product_id, variants_to_create)
             bulk_created_variants = self._handle_graphql_variant_bulk_response(product, instance_id, bulk_response)
 
         # Combinar todas las variantes para actualizar mapas
@@ -1881,6 +1907,49 @@ class ProductTemplate(models.Model):
         """
         option_values = variant_input.get('optionValues', [])
         return tuple(opt['name'] for opt in option_values)
+
+    def _find_matching_odoo_variant(self, product, selected_options, option_attr_lines):
+        """
+        Busca la variante de Odoo que corresponde a las selectedOptions de una variante automática de Shopify.
+        """
+        if not selected_options or not option_attr_lines:
+            return None
+            
+        # Convertir selectedOptions a un diccionario para búsqueda fácil
+        shopify_options = {opt['name']: opt['value'] for opt in selected_options}
+        
+        # Buscar la variante de Odoo que coincida con estas opciones
+        for odoo_variant in product.product_variant_ids:
+            if not odoo_variant.default_code:
+                continue
+                
+            # Verificar si esta variante de Odoo coincide con las opciones de Shopify
+            matches = True
+            value_map = {v.attribute_id.id: v for v in odoo_variant.product_template_attribute_value_ids}
+            
+            for line in option_attr_lines:
+                attr_name = line.attribute_id.name
+                if attr_name in shopify_options:
+                    # Obtener el valor de Odoo para este atributo
+                    odoo_value = value_map.get(line.attribute_id.id)
+                    if odoo_value:
+                        odoo_value_name = self._extract_name(odoo_value.product_attribute_value_id)
+                        shopify_value_name = shopify_options[attr_name]
+                        
+                        if odoo_value_name != shopify_value_name:
+                            matches = False
+                            break
+                    else:
+                        matches = False
+                        break
+                else:
+                    matches = False
+                    break
+            
+            if matches:
+                return odoo_variant
+                
+        return None
 
 
 # inherit class product.attribute and add fields for shopify
