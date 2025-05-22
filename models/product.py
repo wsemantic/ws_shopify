@@ -549,7 +549,7 @@ class ProductTemplate(models.Model):
         
             for product in products_to_export:                
                 if not instance_id.split_products_by_color:
-                    _logger.info("WSSH Exporta no split v2 para id {product.id}")                 
+                    _logger.info(f"WSSH Exporta no split v2 para id {product.id}")                 
                     self._export_single_product_v2(product, instance_id, headers, update)
                     processed_count += 1  # Cambio: Incrementar contador
                     self.write_with_retry(instance_id, 'last_export_product_id', product.id)
