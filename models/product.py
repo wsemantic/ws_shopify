@@ -1766,49 +1766,121 @@ class ProductTemplate(models.Model):
         product_id, basic_variants = self._handle_graphql_product_response_v2(
             product, instance_id, graphql_response
         )
-    
+
         if not product_id:
             _logger.error("WSSH No se obtuvo product_id tras la creación del producto. Abortando exportación.")
             return False
-    
+
+        # Preparar inputs de variantes de Odoo
         variant_inputs = [
             self._prepare_shopify_single_product_variant_bulk_data(v, instance_id, option_attr_lines)
             for v in product.product_variant_ids if v.default_code
         ]
-    
-        combo_to_variant = self._get_shopify_variant_combo_map(product, basic_variants, option_attr_lines)
-        first_combo = tuple(line.value_ids[0].name for line in option_attr_lines) if option_attr_lines else ()
-    
-        # CREACIÓN: Actualiza la primera variante (solo price, sku, barcode) por REST.
-        for v, vinp in zip(product.product_variant_ids, variant_inputs):
-            combo = tuple(opt['name'] for opt in vinp['optionValues'])
-            variant_info = combo_to_variant.get(combo)
-            if combo == first_combo and variant_info:
-                self._shopify_update_first_variant_rest(
-                    instance_id,
-                    variant_info["id"],
-                    v.default_code or "",
-                    v.barcode or "",
-                    vinp.get("price", "")
-                )
-        # Crea el resto de variantes (las que no sean la primera)
+
+        # Mapear variantes existentes de Shopify (creadas automáticamente)
+        combo_to_variant = self._get_shopify_variant_combo_map_consistent(basic_variants)
+        
+        # Construir first_combo consistente con el resto del código
+        first_combo = self._build_first_combo_consistent(option_attr_lines) if option_attr_lines else ()
+
+        # Encontrar la variante de Odoo que corresponde a la primera combinación
+        first_odoo_variant = None
+        first_variant_input = None
+        
+        for odoo_variant, variant_input in zip(product.product_variant_ids, variant_inputs):
+            if not odoo_variant.default_code:
+                continue
+                
+            # Construir combo para esta variante de Odoo de manera consistente
+            odoo_combo = self._build_combo_from_variant_input(variant_input)
+            
+            if odoo_combo == first_combo:
+                first_odoo_variant = odoo_variant
+                first_variant_input = variant_input
+                break
+
+        # Actualizar la primera variante automática (la que creó Shopify automáticamente)
+        if first_odoo_variant and first_variant_input and first_combo in combo_to_variant:
+            variant_info = combo_to_variant[first_combo]
+            _logger.info("WSSH Actualizando primera variante automática con combo: %s", first_combo)
+            
+            self._shopify_update_first_variant_rest(
+                instance_id,
+                variant_info["id"],
+                first_odoo_variant.default_code or "",
+                first_odoo_variant.barcode or "",
+                first_variant_input.get("price", "")
+            )
+
+        # Crear solo las variantes que NO son la primera (y que no existen ya en Shopify)
         create_variants = []
-        for v, vinp in zip(product.product_variant_ids, variant_inputs):
-            combo = tuple(opt['name'] for opt in vinp['optionValues'])
-            if combo != first_combo and combo not in combo_to_variant:
-                create_variants.append(vinp)
+        create_odoo_variants = []
+        
+        for odoo_variant, variant_input in zip(product.product_variant_ids, variant_inputs):
+            if not odoo_variant.default_code:
+                continue
+                
+            odoo_combo = self._build_combo_from_variant_input(variant_input)
+            
+            # Solo crear si no es la primera combinación Y no existe ya en Shopify
+            if odoo_combo != first_combo and odoo_combo not in combo_to_variant:
+                create_variants.append(variant_input)
+                create_odoo_variants.append(odoo_variant)
+
+        # Crear variantes restantes usando bulk create
+        bulk_created_variants = []
         if create_variants:
+            _logger.info("WSSH Creando %d variantes adicionales", len(create_variants))
             bulk_response = self._shopify_graphql_variants_bulk_create(instance_id, product_id, create_variants)
-            # Obtener las variantes creadas de la respuesta bulk
             bulk_created_variants = self._handle_graphql_variant_bulk_response(product, instance_id, bulk_response)
-            # Combinar todas las variantes para actualizar mapas
-            all_variants = basic_variants + bulk_created_variants
-        else:
-            all_variants = basic_variants
+
+        # Combinar todas las variantes para actualizar mapas
+        all_variants = basic_variants + bulk_created_variants
                 
         # CRÍTICO: Actualizar mapas usando la información completa obtenida de GraphQL
         self._update_variant_ids_from_graphql_data(product.product_variant_ids, all_variants, instance_id)
+        
         return True
+
+    # Métodos helper añadidos al final para mantener orden
+
+    def _get_shopify_variant_combo_map_consistent(self, basic_variants):
+        """
+        Mapea cada combinación de opciones (tuple) con su información básica de Shopify.
+        Versión consistente que usa 'value' de selectedOptions.
+        """
+        combo_to_variant = {}
+        for variant in basic_variants:
+            # Usar 'value' de selectedOptions para ser consistente
+            combo = tuple(opt['value'] for opt in variant.get("selectedOptions", []))
+            combo_to_variant[combo] = variant
+        return combo_to_variant
+
+    def _build_first_combo_consistent(self, option_attr_lines):
+        """
+        Construye la primera combinación de manera consistente usando el primer valor de cada línea.
+        """
+        if not option_attr_lines:
+            return ()
+        
+        combo_parts = []
+        for line in option_attr_lines:
+            if line.value_ids:
+                # Usar _extract_name para ser consistente con _prepare_shopify_single_product_variant_bulk_data
+                first_value = line.value_ids[0]
+                extracted_name = self._extract_name(first_value)
+                combo_parts.append(extracted_name)
+            else:
+                combo_parts.append("Default")
+        
+        return tuple(combo_parts)
+
+    def _build_combo_from_variant_input(self, variant_input):
+        """
+        Construye la tupla combo a partir de un variant_input de manera consistente.
+        """
+        option_values = variant_input.get('optionValues', [])
+        return tuple(opt['name'] for opt in option_values)
 
 
 # inherit class product.attribute and add fields for shopify
