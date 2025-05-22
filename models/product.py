@@ -520,11 +520,18 @@ class ProductTemplate(models.Model):
                 products_to_export = products
             else:
                 domain = [('is_published', '=', True)]
-                if instance_id.last_export_product:
+                if instance_id.last_export_product or instance_id.last_export_product_id:
                     _logger.info(f"WSSH Starting product export por fecha {instance_id.last_export_product} instance {instance_id.name} atcolor {color_attribute}") 
-                    domain.append(('write_date', '>', instance_id.last_export_product))
+                    domain.append(('write_date', '>=', instance_id.last_export_product  or '1900-01-01 00:00:00'))
+                    domain.append(('id', '>', instance_id.last_export_product_id or 0))
 
-                products_to_export = self.search(domain, order='write_date')
+                order = "write_date asc, id asc"
+                if instance_id.last_export_stock_id > 0:
+                    order = "id asc"
+                    _logger.info("WSSH Continuando desde ID %s (timeout previo)", instance_id.last_export_product_id)
+                else:
+                    _logger.info("WSSH Iniciando nuevo proceso desde fecha %s", instance_id.last_export_product)
+                products_to_export = self.search(domain, order=order)
                 
             product_count = len(products_to_export)
             _logger.info("WSSH Found %d products to export for instance %s", product_count, instance_id.name)
@@ -546,6 +553,7 @@ class ProductTemplate(models.Model):
                     _logger.info("WSSH Exporta no split v2")                 
                     self._export_single_product_v2(product, instance_id, headers, update)
                     processed_count += 1  # Cambio: Incrementar contador
+                    self.write_with_retry(instance_id, 'last_export_product_id', product.id)
                     if processed_count >= max_processed:
                         _logger.info("WSSH Processed %d products for instance %s. Stopping export for this run.", processed_count, instance_id.name)
                         export_update_time = product.write_date - datetime.timedelta(seconds=1)
@@ -557,6 +565,7 @@ class ProductTemplate(models.Model):
                 if not color_line:
                     _logger.info("WSSH Exporta no color line v2")                     
                     self._export_single_product_v2(product, instance_id, headers, update)
+                    self.write_with_retry(instance_id, 'last_export_product_id', product.id)
                     processed_count += 1  # Cambio: Incrementar contador
                     continue
                 # Variable para rastrear si se procesó al menos una variante del producto
@@ -676,6 +685,7 @@ class ProductTemplate(models.Model):
                                                                                                   
                 if product_processed:
                     processed_count += 1
+                    self.write_with_retry(instance_id, 'last_export_product_id', product.id)
                     
                 if processed_count >= max_processed:
                     _logger.info("WSSH Processed %d products for instance %s. Stopping export for this run.", processed_count, instance_id.name)
