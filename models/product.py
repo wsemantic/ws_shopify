@@ -1275,7 +1275,7 @@ class ProductTemplate(models.Model):
             for v in product.product_variant_ids if v.default_code
         ]
     
-        combo_to_variant = self._get_shopify_variant_combo_map(product, basic_variants, option_attr_lines, graphql_response)
+        combo_to_variant = self._get_shopify_variant_combo_map(product, basic_variants, option_attr_lines)
         first_combo = tuple(line.value_ids[0].name for line in option_attr_lines) if option_attr_lines else ()
     
         # CREACIÓN: Actualiza la primera variante (solo price, sku, barcode) por REST.
