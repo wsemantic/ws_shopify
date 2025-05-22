@@ -695,6 +695,8 @@ class ProductTemplate(models.Model):
             
                                                             
             self.write_with_retry(instance_id, 'last_export_product', export_update_time)
+            if processed_count < max_processed:
+                self.write_with_retry(instance_id, 'last_export_product_id', 0)
             
     def _update_shopify_variant(self, variant, instance_id, headers, option_attr_lines):
         """
