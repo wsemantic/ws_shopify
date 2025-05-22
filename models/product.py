@@ -523,7 +523,7 @@ class ProductTemplate(models.Model):
                 domain = [('is_published', '=', True)]
                 last_product_id = instance_id.last_export_product_id if instance_id.last_export_product_id and instance_id.last_export_product_id > 0 else 0
                 if instance_id.last_export_product or last_product_id>0:
-                    _logger.info(f"WSSH Starting product export por fecha {instance_id.last_export_product} instance {instance_id.name} atcolor {color_attribute}") 
+                    _logger.info(f"WSSH Starting product export id {last_product_id} y fecha {instance_id.last_export_product} instance {instance_id.name} atcolor {color_attribute}") 
                     #ojo cuando id>0 tambien debe filtrar por write_date , que no debe modificarse desde la ultima vez, si no filtra por ello la tanda de ids pendientes seria otra
                     domain.append(('write_date', '>=', instance_id.last_export_product  or '1900-01-01 00:00:00'))
                     domain.append(('id', '>', last_product_id))
@@ -549,12 +549,12 @@ class ProductTemplate(models.Model):
         
             for product in products_to_export:                
                 if not instance_id.split_products_by_color:
-                    _logger.info("WSSH Exporta no split v2")                 
+                    _logger.info("WSSH Exporta no split v2 para id {product.id}")                 
                     self._export_single_product_v2(product, instance_id, headers, update)
                     processed_count += 1  # Cambio: Incrementar contador
                     self.write_with_retry(instance_id, 'last_export_product_id', product.id)
                     if processed_count >= max_processed:
-                        _logger.info("WSSH Processed %d products for instance %s. Stopping export for this run.", processed_count, instance_id.name)
+                        _logger.info("WSSH Single Processed %d products for instance %s. Stopping export for this run.", processed_count, instance_id.name)
                         export_update_time = product.write_date - datetime.timedelta(seconds=1)
                         break                    
                     continue
@@ -1237,7 +1237,6 @@ class ProductTemplate(models.Model):
         """
         _logger.info("WSSH Dentro Exporta no split v2")
         option_attr_lines = self._get_option_attr_lines(product, instance_id)
-        _logger.info("WSSH Single p1")
         
         product_map = product.shopify_product_map_ids.filtered(lambda m: m.shopify_instance_id.id == instance_id.id)
         shopify_product_exists = bool(product_map and product_map.web_product_id)
@@ -1258,15 +1257,10 @@ class ProductTemplate(models.Model):
         
         # Construcción del payload para la llamada GraphQL
         product_input = self._build_graphql_product_input_v2(product, instance_id, option_attr_lines)
-        _logger.info("WSSH product_input (GraphQL): %s", json.dumps(product_input, indent=2, default=str))
-        _logger.info("WSSH Single p2")
         graphql_response = self._shopify_graphql_call_v2(instance_id, product_input)
-        _logger.info("WSSH graphql_response: %s", json.dumps(graphql_response, indent=2, default=str))
-        _logger.info("WSSH Single p3")
         product_id, basic_variants = self._handle_graphql_product_response_v2(
             product, instance_id, graphql_response
         )
-        _logger.info("WSSH Single p4")
     
         if not product_id:
             _logger.error("WSSH No se obtuvo product_id tras la creación del producto. Abortando exportación.")
@@ -1299,9 +1293,7 @@ class ProductTemplate(models.Model):
             if combo != first_combo:
                 create_variants.append(vinp)
         if create_variants:
-            _logger.info("WSSH Bulk create variantes: %s", json.dumps(create_variants, indent=2, default=str))
             bulk_response = self._shopify_graphql_variants_bulk_create(instance_id, product_id, create_variants)
-            _logger.info("WSSH Bulk GraphQL response: %s", json.dumps(bulk_response, indent=2, default=str))
             # Obtener las variantes creadas de la respuesta bulk
             bulk_created_variants = self._handle_graphql_variant_bulk_response(product, instance_id, bulk_response)
             # Combinar todas las variantes para actualizar mapas
@@ -1310,7 +1302,6 @@ class ProductTemplate(models.Model):
             all_variants = basic_variants
                 
         # CRÍTICO: Actualizar mapas usando la información completa obtenida de GraphQL
-        _logger.info("WSSH Actualizando mapas con %d variantes desde respuestas GraphQL", len(all_variants))
         self._update_variant_ids_from_graphql_data(product.product_variant_ids, all_variants, instance_id)
 
 
@@ -1361,16 +1352,11 @@ class ProductTemplate(models.Model):
             }
         }
         """
-        _logger.info("WSSH DEBUG GraphQL mutation: %s", mutation)
-        _logger.info("WSSH DEBUG GraphQL endpoint: %s", graphql_url)
-        _logger.info("WSSH DEBUG GraphQL headers: %s", headers)
-        _logger.info("WSSH DEBUG GraphQL variables: %s", json.dumps({"input": product_input}, indent=2, default=str))
         response = requests.post(graphql_url, headers=headers, json={
             "query": mutation,
             "variables": {"input": product_input}
         })
         _logger.info("WSSH DEBUG Raw GraphQL HTTP status: %s", response.status_code)
-        _logger.info("WSSH DEBUG Raw GraphQL response text: %s", response.text)
         try:
             return response.json()
         except Exception as ex:
@@ -1382,7 +1368,6 @@ class ProductTemplate(models.Model):
         Procesa la respuesta GraphQL de creación de producto.
         Devuelve GID de producto y lista básica de variantes.
         """
-        _logger.info("WSSH DEBUG parsed response_json: %s", json.dumps(response_json, indent=2, default=str))
         data = response_json.get("data", {}).get("productCreate", {})
         errors = data.get("userErrors", [])
         product_data = data.get("product")
@@ -1470,15 +1455,12 @@ class ProductTemplate(models.Model):
             "productId": product_gid,
             "variants": variant_inputs
         }
-        _logger.info("WSSH Bulk GraphQL mutation: %s", mutation)
-        _logger.info("WSSH Bulk GraphQL endpoint: %s", graphql_url)
-        _logger.info("WSSH Bulk GraphQL variables: %s", json.dumps(variables, indent=2, default=str))
+
         response = requests.post(graphql_url, headers=headers, json={
             "query": mutation,
             "variables": variables
         })
         _logger.info("WSSH Bulk GraphQL HTTP status: %s", response.status_code)
-        _logger.info("WSSH Bulk GraphQL response text: %s", response.text)
         try:
             return response.json()
         except Exception as ex:
@@ -1516,15 +1498,13 @@ class ProductTemplate(models.Model):
             "productId": product_gid,
             "variants": variant_updates
         }
-        _logger.info("WSSH BulkUpdate GraphQL mutation: %s", mutation)
-        _logger.info("WSSH BulkUpdate GraphQL endpoint: %s", graphql_url)
-        _logger.info("WSSH BulkUpdate GraphQL variables: %s", json.dumps(variables, indent=2, default=str))
+
         response = requests.post(graphql_url, headers=headers, json={
             "query": mutation,
             "variables": variables
         })
         _logger.info("WSSH BulkUpdate GraphQL HTTP status: %s", response.status_code)
-        _logger.info("WSSH BulkUpdate GraphQL response text: %s", response.text)
+
         try:
             return response.json()
         except Exception as ex:
@@ -1621,12 +1601,12 @@ class ProductTemplate(models.Model):
                 "price": price
             }
         }
-        _logger.info("WSSH Actualizando primera variante por REST: %s", json.dumps(data))
+
         response = requests.put(url, headers=headers, data=json.dumps(data))
         if not response.ok:
             _logger.error(f"WSSH Error actualizando primera variante REST: {response.text}")
             raise UserError(f"Error actualizando primera variante REST: {response.text}")
-        _logger.info("WSSH Actualización primera variante OK por REST: %s", response.text)
+
         return response.json()   
     
     def _gid_to_id(self,gid):
@@ -1667,14 +1647,12 @@ class ProductTemplate(models.Model):
                 if variant_map:
                     if variant_map.web_variant_id != variant_id:
                         variant_map.write({'web_variant_id': variant_id})
-                        _logger.info("WSSH Updated variant map for Odoo variant (SKU: %s)", odoo_variant.default_code)
                 else:
                     self.env['shopify.variant.map'].create({
                         'web_variant_id': variant_id,
                         'odoo_id': odoo_variant.id,
                         'shopify_instance_id': instance_id.id,
                     })
-                    _logger.info("WSSH Created variant map for Odoo variant (SKU: %s)", odoo_variant.default_code)
     
                 # Actualizar o crear el mapeo de stock si tenemos inventory_item_id y location
                 if inventory_item_id and shopify_location:
@@ -1704,14 +1682,6 @@ class ProductTemplate(models.Model):
                 sku = odoo_variant.default_code or 'N/A'
                 _logger.warning(f"WSSH No matching Shopify variant found for Odoo variant with SKU {sku}")   
                      
-    def _get_complete_shopify_product(self, instance_id, product_gid):
-        """
-        MÉTODO OBSOLETO: Ya no es necesario hacer una segunda consulta porque obtenemos
-        toda la información necesaria directamente de las respuestas GraphQL.
-        Se mantiene por compatibilidad pero no se usa en el flujo principal.
-        """
-        _logger.warning("WSSH _get_complete_shopify_product llamado pero ya no es necesario - usar datos de GraphQL")
-        return None
         
     def _update_existing_product_prices_only(self, product, instance_id, product_map):
         """
