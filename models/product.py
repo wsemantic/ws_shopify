@@ -1795,7 +1795,7 @@ class ProductTemplate(models.Model):
         create_variants = []
         for v, vinp in zip(product.product_variant_ids, variant_inputs):
             combo = tuple(opt['name'] for opt in vinp['optionValues'])
-            if combo != first_combo:
+            if combo != first_combo and combo not in combo_to_variant:
                 create_variants.append(vinp)
         if create_variants:
             bulk_response = self._shopify_graphql_variants_bulk_create(instance_id, product_id, create_variants)
