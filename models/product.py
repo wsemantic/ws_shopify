@@ -539,13 +539,17 @@ class ProductTemplate(models.Model):
             }
 
             processed_count = 0
-            max_processed = 5  # Limitar a 10 productos exportados por ejecución
+            max_processed = 100  # Limitar a 10 productos exportados por ejecución
         
             for product in products_to_export:                
                 if not instance_id.split_products_by_color:
                     _logger.info("WSSH Exporta no split v2")                 
                     self._export_single_product_v2(product, instance_id, headers, update)
                     processed_count += 1  # Cambio: Incrementar contador
+                    if processed_count >= max_processed:
+                        _logger.info("WSSH Processed %d products for instance %s. Stopping export for this run.", processed_count, instance_id.name)
+                        export_update_time = product.write_date - datetime.timedelta(seconds=1)
+                        break                    
                     continue
 
                 color_line = product.attribute_line_ids.filtered(

@@ -35,6 +35,7 @@ class ShopifyInstance(models.Model):
     size_option_position = fields.Integer(string="Size Option Position", default=2, help="Define en qué opción de Shopify se mapeará la talla (por defecto, en la opción 2).")
     
     last_export_stock_id = fields.Integer(string="Último ID Stock exportado", default=0, help="ID del último stock exportado")
+    last_export_product_id = fields.Integer(string="Último ID Producto exportado", default=0, help="ID del último producto exportado")
     salesperson_id = fields.Many2one(
         'res.users', 
         string='Salesperson', 

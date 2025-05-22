@@ -45,6 +45,7 @@
 							<page string="Export Details">
 								<group>
 									<field name="last_export_product"/>
+									<field name="last_export_product_id"/>
 									<field name="last_export_stock"/>
 									<field name="last_export_stock_id"/>
 									<field name="split_products_by_color"/>
