@@ -513,8 +513,7 @@ class ProductTemplate(models.Model):
                             
                 return # Salir del método para esta instancia
             
-            export_update_time = fields.Datetime.now()        
-            last_product_id= instance_id.last_export_product_id or 0            
+            export_update_time = fields.Datetime.now()                 
             
             # Si products está informado, usarlo; de lo contrario, buscar productos publicados
             if products is not None:
@@ -522,18 +521,15 @@ class ProductTemplate(models.Model):
                 products_to_export = products
             else:
                 domain = [('is_published', '=', True)]
+                last_product_id = instance_id.last_export_product_id if instance_id.last_export_product_id and instance_id.last_export_product_id > 0 else 0
                 if instance_id.last_export_product or last_product_id>0:
                     _logger.info(f"WSSH Starting product export por fecha {instance_id.last_export_product} instance {instance_id.name} atcolor {color_attribute}") 
                     #ojo cuando id>0 tambien debe filtrar por write_date , que no debe modificarse desde la ultima vez, si no filtra por ello la tanda de ids pendientes seria otra
                     domain.append(('write_date', '>=', instance_id.last_export_product  or '1900-01-01 00:00:00'))
                     domain.append(('id', '>', last_product_id))
 
-                order = "write_date asc, id asc"
-                if last_product_id > 0:
-                    order = "id asc"
-                    _logger.info("WSSH Continuando desde ID %s (timeout previo)", last_product_id)
-                else:
-                    _logger.info("WSSH Iniciando nuevo proceso desde fecha %s", instance_id.last_export_product)
+                order = "id asc"
+
                 products_to_export = self.search(domain, order=order)
                 
             product_count = len(products_to_export)
