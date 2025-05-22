@@ -513,24 +513,25 @@ class ProductTemplate(models.Model):
                             
                 return # Salir del método para esta instancia
             
-            export_update_time = fields.Datetime.now()            
+            export_update_time = fields.Datetime.now()        
+            last_product_id= instance_id.last_export_product_id or 0            
+            
             # Si products está informado, usarlo; de lo contrario, buscar productos publicados
             if products is not None:
                 _logger.info(f"WSSH Seleccion manual Exportacion {len(products)}")
                 products_to_export = products
             else:
                 domain = [('is_published', '=', True)]
-                if instance_id.last_export_product_id and instance_id.last_export_product_id>0:
+                if instance_id.last_export_product or last_product_id>0:
                     _logger.info(f"WSSH Starting product export por fecha {instance_id.last_export_product} instance {instance_id.name} atcolor {color_attribute}") 
-                    domain.append(('id', '>', instance_id.last_export_product_id))
-                elif  instance_id.last_export_product:
-                    _logger.info(f"WSSH Starting product export por fecha {instance_id.last_export_product} instance {instance_id.name} atcolor {color_attribute}") 
-                    domain.append(('write_date', '>=', instance_id.last_export_product  or '1900-01-01 00:00:00'))                    
+                    #ojo cuando id>0 tambien debe filtrar por write_date , que no debe modificarse desde la ultima vez, si no filtra por ello la tanda de ids pendientes seria otra
+                    domain.append(('write_date', '>=', instance_id.last_export_product  or '1900-01-01 00:00:00'))
+                    domain.append(('id', '>', last_product_id))
 
                 order = "write_date asc, id asc"
-                if instance_id.last_export_product_id and instance_id.last_export_product_id > 0:
+                if last_product_id > 0:
                     order = "id asc"
-                    _logger.info("WSSH Continuando desde ID %s (timeout previo)", instance_id.last_export_product_id)
+                    _logger.info("WSSH Continuando desde ID %s (timeout previo)", last_product_id)
                 else:
                     _logger.info("WSSH Iniciando nuevo proceso desde fecha %s", instance_id.last_export_product)
                 products_to_export = self.search(domain, order=order)
@@ -975,6 +976,7 @@ class ProductTemplate(models.Model):
                 _logger.warning("No shopify.location found for instance %s", shopify_instance.name)
                 return updated_ids
             
+            last_stock_id= shopify_instance.last_export_stock_id or 0
             # Si se pasa una selección de productos, se filtran las variantes correspondientes.
             if products:
                 # Buscamos las variantes asociadas a los templates seleccionados.
@@ -986,16 +988,16 @@ class ProductTemplate(models.Model):
                 #retrasando la ultima fecha de exportacion de stock saltandose los quant modificados
                 quant_domain = [
                     ('effective_export_date', '>=', shopify_instance.last_export_stock or '1900-01-01 00:00:00'),
-                    ('id', '>', shopify_instance.last_export_stock_id or 0)
+                    ('id', '>', last_stock_id)
                 ]
                 if location.import_stock_warehouse_id:
                     quant_domain.append(('location_id', '=', location.import_stock_warehouse_id.id))
                 
                 # Buscar stock.quants con el orden apropiado
                 order = "effective_export_date asc, id asc"
-                if shopify_instance.last_export_stock_id > 0:
+                if last_stock_id > 0:
                     order = "id asc"
-                    _logger.info("WSSH Continuando desde ID %s (timeout previo)", shopify_instance.last_export_stock_id)
+                    _logger.info("WSSH Continuando desde ID %s (timeout previo)", last_stock_id)
                 else:
                     _logger.info("WSSH Iniciando nuevo proceso desde fecha %s", shopify_instance.last_export_stock)
                 
