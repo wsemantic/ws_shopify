@@ -1611,6 +1611,7 @@ class ProductTemplate(models.Model):
     def _handle_existing_product_with_new_variants(self, product, instance_id, product_map, update):
         """
         Maneja productos existentes: crea variantes nuevas siempre y actualiza precios si update=True.
+        CORREGIDO: Maneja lotes para evitar límite de 100 variantes.
         Retorna True si se procesó algo real.
         """
         option_attr_lines = self._get_option_attr_lines(product, instance_id)
@@ -1631,11 +1632,28 @@ class ProductTemplate(models.Model):
                 for v in unmapped_variants
             ]
             
+            # CORRECCIÓN: Crear variantes nuevas en lotes para evitar límite de 100
+            all_new_variants = []
             if new_variant_inputs:
-                bulk_response = self._shopify_graphql_variants_bulk_create(instance_id, product_gid, new_variant_inputs)
-                new_variants = self._handle_graphql_variant_bulk_response(product, instance_id, bulk_response)
+                batch_size = 95  # Por seguridad, usar 95 en lugar de 100
+                total_batches = (len(new_variant_inputs) + batch_size - 1) // batch_size
+                
+                _logger.info("WSSH Creando %d variantes nuevas en %d lotes de máximo %d variantes", 
+                            len(new_variant_inputs), total_batches, batch_size)
+                
+                for i in range(0, len(new_variant_inputs), batch_size):
+                    batch = new_variant_inputs[i:i + batch_size]
+                    batch_num = (i // batch_size) + 1
+                    
+                    _logger.info("WSSH Procesando lote de variantes nuevas %d/%d con %d variantes", 
+                                batch_num, total_batches, len(batch))
+                    
+                    bulk_response = self._shopify_graphql_variants_bulk_create(instance_id, product_gid, batch)
+                    batch_variants = self._handle_graphql_variant_bulk_response(product, instance_id, bulk_response)
+                    all_new_variants.extend(batch_variants)
+                
                 # Actualizar mapas solo para las variantes nuevas
-                self._update_variant_ids_from_graphql_data(unmapped_variants, new_variants, instance_id)
+                self._update_variant_ids_from_graphql_data(unmapped_variants, all_new_variants, instance_id)
                 processed_something = True
         
         if update:
@@ -1653,6 +1671,7 @@ class ProductTemplate(models.Model):
     def _create_new_product_graphql_v2(self, product, instance_id, option_attr_lines):
         """
         Crea un producto completamente nuevo usando GraphQL.
+        Maneja productos con más de 100 variantes creándolas en lotes.
         Retorna True si se crea exitosamente.
         """
         # Construcción del payload para la llamada GraphQL
@@ -1661,13 +1680,13 @@ class ProductTemplate(models.Model):
         product_id, basic_variants = self._handle_graphql_product_response_v2(
             product, instance_id, graphql_response
         )
-
+    
         if not product_id:
             _logger.error("WSSH No se obtuvo product_id tras la creación del producto. Abortando exportación.")
             return False
-
+    
         _logger.info("WSSH Producto creado con %d variantes automáticas", len(basic_variants))
-
+    
         # Actualizar TODAS las variantes automáticas con datos de Odoo
         for basic_variant in basic_variants:
             variant_id = basic_variant["id"]
@@ -1676,9 +1695,6 @@ class ProductTemplate(models.Model):
             # Buscar la variante de Odoo que corresponde a esta variante automática
             matching_odoo_variant = self._find_matching_odoo_variant(
                 product, selected_options, option_attr_lines
-                                                      
-                                                 
-                                                    
             )
             
             if matching_odoo_variant:
@@ -1698,7 +1714,7 @@ class ProductTemplate(models.Model):
                 )
             else:
                 _logger.warning("WSSH No se encontró variante de Odoo correspondiente para variante automática ID %s", variant_id)
-
+    
         # Preparar variantes de Odoo que NO fueron actualizadas como automáticas
         variants_to_create = []
         updated_odoo_variants = set()
@@ -1712,7 +1728,7 @@ class ProductTemplate(models.Model):
             )
             if matching_odoo_variant:
                 updated_odoo_variants.add(matching_odoo_variant.id)
-
+    
         # Crear solo las variantes de Odoo que NO fueron actualizadas
         for odoo_variant in product.product_variant_ids:
             if odoo_variant.default_code and odoo_variant.id not in updated_odoo_variants:
@@ -1721,16 +1737,29 @@ class ProductTemplate(models.Model):
                 )
                 variants_to_create.append(variant_input)
                 _logger.info("WSSH Variante a crear: SKU %s", odoo_variant.default_code)
-
-        # Crear variantes restantes usando bulk create
-        bulk_created_variants = []
+    
+        # CORRECCIÓN: Crear variantes en lotes para evitar límite de 100
+        all_bulk_created_variants = []
         if variants_to_create:
-            _logger.info("WSSH Creando %d variantes adicionales", len(variants_to_create))
-            bulk_response = self._shopify_graphql_variants_bulk_create(instance_id, product_id, variants_to_create)
-            bulk_created_variants = self._handle_graphql_variant_bulk_response(product, instance_id, bulk_response)
-
-        # Combinar todas las variantes para actualizar mapas
-        all_variants = basic_variants + bulk_created_variants
+            batch_size = 95  # Por seguridad, usar 95 en lugar de 100
+            total_batches = (len(variants_to_create) + batch_size - 1) // batch_size
+            
+            _logger.info("WSSH Creando %d variantes en %d lotes de máximo %d variantes", 
+                        len(variants_to_create), total_batches, batch_size)
+            
+            for i in range(0, len(variants_to_create), batch_size):
+                batch = variants_to_create[i:i + batch_size]
+                batch_num = (i // batch_size) + 1
+                
+                _logger.info("WSSH Procesando lote %d/%d con %d variantes", 
+                            batch_num, total_batches, len(batch))
+                
+                bulk_response = self._shopify_graphql_variants_bulk_create(instance_id, product_id, batch)
+                batch_variants = self._handle_graphql_variant_bulk_response(product, instance_id, bulk_response)
+                all_bulk_created_variants.extend(batch_variants)
+    
+        # Combinar todas las variantes para actualizar mapas  
+        all_variants = basic_variants + all_bulk_created_variants
                 
         # CRÍTICO: Actualizar mapas usando la información completa obtenida de GraphQL
         self._update_variant_ids_from_graphql_data(product.product_variant_ids, all_variants, instance_id)
