@@ -875,9 +875,13 @@ class ProductTemplate(models.Model):
                 # se ha podido colar la tarea de exportacion de stock, retrasando la ultima fecha de exportacion de stock 
                 # saltandose los quant modificados
                 quant_domain = [
-                    ('effective_export_date', '>=', shopify_instance.last_export_stock or '1900-01-01 00:00:00'),
-                    ('product_id', '>', last_stock_id)  # Filtrar por ID de variante, no de quant
+                    ('effective_export_date', '>=', shopify_instance.last_export_stock or '1900-01-01 00:00:00')
                 ]
+                
+                # Solo aplicar filtro por product_id si last_stock_id > 0
+                if last_stock_id > 0:
+                    quant_domain.append(('product_id', '>', last_stock_id))
+                    
                 if internal_location:
                     # Usar la ubicación definida (específica o primera interna)
                     quant_domain.append(('location_id', '=', internal_location.id))
