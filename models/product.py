@@ -847,6 +847,22 @@ class ProductTemplate(models.Model):
                 _logger.warning("No shopify.location found for instance %s", shopify_instance.name)
                 return updated_ids
             
+            # Definir ubicación a usar: específica o la primera interna
+            if location.import_stock_warehouse_id:
+                # Si hay ubicación específica configurada, usar esa
+                internal_location = location.import_stock_warehouse_id
+                _logger.info("WSSH Usando ubicación específica configurada: %s", internal_location.name)
+            else:
+                # Si no hay ubicación específica, usar la primera ubicación interna
+                internal_location = self.env['stock.location'].sudo().search([
+                    ('usage', '=', 'internal'),
+                    ('company_id', '=', self.env.company.id)
+                ], limit=1)
+                if internal_location:
+                    _logger.info("WSSH Usando primera ubicación interna: %s", internal_location.name)
+                else:
+                    _logger.warning("WSSH No se encontraron ubicaciones internas para la instancia %s", shopify_instance.name)
+            
             last_stock_id = shopify_instance.last_export_stock_id if shopify_instance.last_export_stock_id and shopify_instance.last_export_stock_id > 0 else 0
             # Si se pasa una selección de productos, se filtran las variantes correspondientes.
             if products:
@@ -854,22 +870,24 @@ class ProductTemplate(models.Model):
                 variants = self.env['product.product'].search([('product_tmpl_id', 'in', products.ids)])
             else:
                 # Dominio original para stock.quants, según fecha y último ID exportado.
-                #usamos effective_export_date (deberia llamarse (effective write date) que es el mayor entre fecha escritura quant, y fecha creacion mapa stock
-                #porque entre la creacion de productos en odoo y la tarea de exportacion de prodcutos que crea el mapa de stock se ha podido colar la tarea de exportacion de stock,
-                #retrasando la ultima fecha de exportacion de stock saltandose los quant modificados
+                # usamos effective_export_date (que es el mayor entre fecha escritura quant y fecha creacion mapa stock)
+                # porque entre la creacion de productos en odoo y la tarea de exportacion de productos que crea el mapa de stock 
+                # se ha podido colar la tarea de exportacion de stock, retrasando la ultima fecha de exportacion de stock 
+                # saltandose los quant modificados
                 quant_domain = [
                     ('effective_export_date', '>=', shopify_instance.last_export_stock or '1900-01-01 00:00:00'),
-                    ('id', '>', last_stock_id)
+                    ('product_id', '>', last_stock_id)  # Filtrar por ID de variante, no de quant
                 ]
-                if location.import_stock_warehouse_id:
-                    quant_domain.append(('location_id', '=', location.import_stock_warehouse_id.id))
+                if internal_location:
+                    # Usar la ubicación definida (específica o primera interna)
+                    quant_domain.append(('location_id', '=', internal_location.id))
                 
                 # Buscar stock.quants con el orden apropiado
                 order = "id asc"
-
+    
                 quants = self.env['stock.quant'].sudo().search(quant_domain, order=order)
-                # Obtener variantes únicas de los quants        
-                variants = self.env['product.product'].sudo().browse(quants.mapped('product_id').ids)
+                # Obtener variantes únicas de los quants
+                variants = self.env['product.product'].sudo().browse(quants.mapped('product_id').ids).sorted('id')
             
             # Filtrar variantes con shopify_stock_map_ids válidos para la instancia y ubicación actuales
             variants = variants.filtered(lambda v: any(
@@ -889,12 +907,26 @@ class ProductTemplate(models.Model):
                 if not stock_map or not stock_map.web_stock_id:
                     continue
                 
-                # Obtener cantidad disponible desde stock.quant
-                domain = [('product_id', '=', variant.id)]
-                if location.import_stock_warehouse_id:
-                    domain.append(('location_id', '=', location.import_stock_warehouse_id.id))
-                quant = self.env['stock.quant'].sudo().search(domain, limit=1)
-                available_qty = quant.quantity if quant else 0
+                # CORRECCIÓN: Obtener cantidad disponible correctamente
+                if internal_location:
+                    # Calcular stock disponible en la ubicación definida
+                    # (ya sea la específica configurada o la primera interna)
+                    # SUMA todos los quants/lotes de la variante - esto es coherente con el mapa agregado
+                    quant_qty = self.env['stock.quant'].sudo().search([
+                        ('product_id', '=', variant.id),
+                        ('location_id', '=', internal_location.id)
+                    ])
+                    available_qty = sum(q.quantity for q in quant_qty if q.quantity > 0)
+                else:
+                    # Fallback: usar qty_available general pero limitado a stock positivo
+                    available_qty = max(0, variant.qty_available)
+                
+                # CORRECCIÓN ADICIONAL: Asegurar que no se envíen cantidades negativas
+                # Shopify no maneja bien las cantidades negativas
+                available_qty = max(0, available_qty)
+                
+                _logger.info("WSSH Enviando stock para variante %s (SKU: %s): %s a Shopify", 
+                            variant.id, variant.default_code, available_qty)
                 
                 # Control de tiempo entre peticiones
                 elapsed = time.time() - last_query_time
@@ -917,9 +949,8 @@ class ProductTemplate(models.Model):
                 response = requests.post(url, headers=headers, json=data_payload)
                 if response.status_code in (200, 201):
                     updated_ids.append(variant.id)
-                    # Actualizar shopify_instance tras cada éxito con el ID del quant
-                    if quant:
-                        self.write_with_retry(shopify_instance, 'last_export_stock_id', quant.id)
+                    # Actualizar con el ID de la variante procesada (consistente con el mapa agregado)
+                    self.write_with_retry(shopify_instance, 'last_export_stock_id', variant.id)
                 else:
                     _logger.warning("WSSH Failed to update stock for product %s (variant %s): %s en instancia %s",
                                     variant.product_tmpl_id.name, variant.name, response.text, shopify_instance.name)
@@ -930,13 +961,11 @@ class ProductTemplate(models.Model):
                                   variant.default_code, shopify_instance.name)
                     return updated_ids
             
-            # Si se procesan todos los productos, actualizar a la fecha actual
+            # Si se procesan todos los productos, actualizar a la fecha actual y resetear el ID de variante
             _logger.info("WSSH Update stock final completo para %s", shopify_instance.name)
             self.write_with_retry(shopify_instance, 'last_export_stock', fields.Datetime.now())
             self.write_with_retry(shopify_instance, 'last_export_stock_id', 0)
             return updated_ids
-
-    # Dentro de la clase product.template heredada (ws_shopify.models.product)
 
     def _check_last_shopify_product_map(self, shopify_instance):
         """
