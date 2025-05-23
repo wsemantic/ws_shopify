@@ -847,7 +847,7 @@ class ProductTemplate(models.Model):
                 _logger.warning("No shopify.location found for instance %s", shopify_instance.name)
                 return updated_ids
             
-            last_stock_id= shopify_instance.last_export_stock_id or 0
+            last_stock_id = shopify_instance.last_export_stock_id if shopify_instance.last_export_stock_id and shopify_instance.last_export_stock_id > 0 else 0
             # Si se pasa una selección de productos, se filtran las variantes correspondientes.
             if products:
                 # Buscamos las variantes asociadas a los templates seleccionados.
@@ -865,13 +865,8 @@ class ProductTemplate(models.Model):
                     quant_domain.append(('location_id', '=', location.import_stock_warehouse_id.id))
                 
                 # Buscar stock.quants con el orden apropiado
-                order = "effective_export_date asc, id asc"
-                if last_stock_id > 0:
-                    order = "id asc"
-                    _logger.info("WSSH Continuando desde ID %s (timeout previo)", last_stock_id)
-                else:
-                    _logger.info("WSSH Iniciando nuevo proceso desde fecha %s", shopify_instance.last_export_stock)
-                
+                order = "id asc"
+
                 quants = self.env['stock.quant'].sudo().search(quant_domain, order=order)
                 # Obtener variantes únicas de los quants        
                 variants = self.env['product.product'].sudo().browse(quants.mapped('product_id').ids)
