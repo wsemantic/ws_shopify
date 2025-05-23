@@ -882,12 +882,12 @@ class ProductTemplate(models.Model):
                     # Usar la ubicación definida (específica o primera interna)
                     quant_domain.append(('location_id', '=', internal_location.id))
                 
-                # Buscar stock.quants con el orden apropiado
-                order = "id asc"
+                # Buscar stock.quants con el orden apropiado por product_id
+                order = "product_id asc"
     
                 quants = self.env['stock.quant'].sudo().search(quant_domain, order=order)
-                # Obtener variantes únicas de los quants
-                variants = self.env['product.product'].sudo().browse(quants.mapped('product_id').ids).sorted('id')
+                # Obtener variantes únicas de los quants (mapped elimina duplicados automáticamente)
+                variants = quants.mapped('product_id').sorted('id')
             
             # Filtrar variantes con shopify_stock_map_ids válidos para la instancia y ubicación actuales
             variants = variants.filtered(lambda v: any(
