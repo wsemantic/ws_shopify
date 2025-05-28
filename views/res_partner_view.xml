@@ -7,8 +7,6 @@
         <field name="arch" type="xml">
             <tree sample="1">
                 <field name="name"/>
-                <!-- Campo existencial que muestra 'Exportado' si existen mapeos -->
-                <field name="shopify_exported"/>
                 <field name="phone"/>
                 <field name="email"/>
             </tree>
@@ -72,6 +70,12 @@
                 <br/>
                 <p>
                     <b>There are no Shopify Customer Created yet.</b>
+                </p>
+            </div>
+        </field>
+    </record>
+</odoo>
+     <b>There are no Shopify Customer Created yet.</b>
                 </p>
             </div>
         </field>
