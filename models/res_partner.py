@@ -32,20 +32,54 @@ class ResPartner(models.Model):
     def _compute_shopify_exported(self):
         for partner in self:
             partner.shopify_exported = bool(partner.shopify_partner_map_ids)
-
+    
+    
     def import_shopify_customers(self, shopify_instance_ids, skip_existing_customer):
-        # Calcular tiempo máximo basado en configuración de Odoo
-        limit_time_real = config.get('limit_time_real', 120)
-        max_execution_time = limit_time_real - 20  # Margen de seguridad de 20s
+        # Debug completo de la configuración
+        _logger.info(f"WSSH === DEBUG CONFIGURACIÓN ===")
+        limit_time_real_raw = config.get('limit_time_real')  # Sin default para ver el valor real
+        _logger.info(f"WSSH limit_time_real RAW (sin default): '{limit_time_real_raw}' (tipo: {type(limit_time_real_raw)})")
+        
+        limit_time_real_with_default = config.get('limit_time_real', 120)
+        _logger.info(f"WSSH limit_time_real con default: '{limit_time_real_with_default}' (tipo: {type(limit_time_real_with_default)})")
+        
+        # Convertir SIEMPRE a entero, sin importar el tipo original
+        try:
+            # Primero obtener el valor (string desde config o default int)
+            raw_value = config.get('limit_time_real')
+            tout_medio=300
+            if raw_value is None:
+                # No está configurado, usar default
+                limit_time_real = tout_medio  # Default más conservador
+                _logger.info(f"WSSH limit_time_real no configurado, usando default: {limit_time_real}s")
+            else:
+                # Está configurado, convertir a int
+                limit_time_real = int(str(raw_value).strip())
+                _logger.info(f"WSSH limit_time_real desde config: {limit_time_real}s")
+                
+            # Validar que sea un valor razonable (entre 60s y 2 horas)
+            if limit_time_real < 60:
+                _logger.warning(f"WSSH limit_time_real muy bajo: {limit_time_real}s, usando {tout_medio}s")
+                limit_time_real = tout_medio
+            elif limit_time_real > 7200:
+                _logger.warning(f"WSSH limit_time_real muy alto: {limit_time_real}s, usando 600s")  
+                limit_time_real = 600
+                
+        except (ValueError, TypeError) as e:
+            _logger.error(f"WSSH Error procesando limit_time_real '{raw_value}': {e}, usando 600s")
+            limit_time_real = tout_medio
+        
+        max_execution_time = limit_time_real - 60  # Margen de seguridad de 20s
         
         start_time = time.time()
-        _logger.info(f"WSSH Iniciando importación con timeout de {max_execution_time}s")
+        _logger.info(f"WSSH Timeout final calculado: {max_execution_time}s (desde limit_time_real: {limit_time_real}s)")
+        _logger.info(f"WSSH === FIN DEBUG CONFIGURACIÓN ===")
         
         if not shopify_instance_ids:
             shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
     
         for shopify_instance_id in shopify_instance_ids:
-            url = self.get_customer_url(shopify_instance_id, endpoint='customers.json')
+            base_url = self.get_customer_url(shopify_instance_id, endpoint='customers.json')
             access_token = shopify_instance_id.shopify_shared_secret
             headers = {"X-Shopify-Access-Token": access_token}
     
@@ -58,6 +92,7 @@ class ResPartner(models.Model):
                 _logger.info(f"WSSH Buscando por ID {shopify_instance_id.shopify_last_import_customer_id}")
                 params["since_id"] = shopify_instance_id.shopify_last_import_customer_id
     
+            url = base_url
             import_complete = False
             last_customer_id = None
     
