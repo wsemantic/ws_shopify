@@ -33,8 +33,12 @@ class ResPartner(models.Model):
         for partner in self:
             partner.shopify_exported = bool(partner.shopify_partner_map_ids)
     
-    
     def import_shopify_customers(self, shopify_instance_ids, skip_existing_customer):
+        # Configuración de timeouts y límites
+        tout_medio = 300  # Timeout medio para requests individuales
+        pagina_size = 20  # Tamaño de página para monitorización frecuente
+        margen_seguridad = 60  # Margen de seguridad en segundos
+        
         # Debug completo de la configuración
         _logger.info(f"WSSH === DEBUG CONFIGURACIÓN ===")
         limit_time_real_raw = config.get('limit_time_real')  # Sin default para ver el valor real
@@ -47,10 +51,10 @@ class ResPartner(models.Model):
         try:
             # Primero obtener el valor (string desde config o default int)
             raw_value = config.get('limit_time_real')
-            tout_medio=300
+            
             if raw_value is None:
                 # No está configurado, usar default
-                limit_time_real = tout_medio  # Default más conservador
+                limit_time_real = tout_medio * 2  # Default más conservador
                 _logger.info(f"WSSH limit_time_real no configurado, usando default: {limit_time_real}s")
             else:
                 # Está configurado, convertir a int
@@ -59,71 +63,92 @@ class ResPartner(models.Model):
                 
             # Validar que sea un valor razonable (entre 60s y 2 horas)
             if limit_time_real < 60:
-                _logger.warning(f"WSSH limit_time_real muy bajo: {limit_time_real}s, usando {tout_medio}s")
-                limit_time_real = tout_medio
+                _logger.warning(f"WSSH limit_time_real muy bajo: {limit_time_real}s, usando {tout_medio * 2}s")
+                limit_time_real = tout_medio * 2
             elif limit_time_real > 7200:
-                _logger.warning(f"WSSH limit_time_real muy alto: {limit_time_real}s, usando 600s")  
-                limit_time_real = 600
+                _logger.warning(f"WSSH limit_time_real muy alto: {limit_time_real}s, usando {tout_medio * 2}s")  
+                limit_time_real = tout_medio * 2
                 
         except (ValueError, TypeError) as e:
-            _logger.error(f"WSSH Error procesando limit_time_real '{raw_value}': {e}, usando 600s")
-            limit_time_real = tout_medio
+            _logger.error(f"WSSH Error procesando limit_time_real '{raw_value}': {e}, usando {tout_medio * 2}s")
+            limit_time_real = tout_medio * 2
         
-        max_execution_time = limit_time_real - 60  # Margen de seguridad de 20s
+        max_execution_time = limit_time_real - margen_seguridad  # Margen de seguridad
         
         start_time = time.time()
         _logger.info(f"WSSH Timeout final calculado: {max_execution_time}s (desde limit_time_real: {limit_time_real}s)")
+        _logger.info(f"WSSH Configuración: página_size={pagina_size}, tout_medio={tout_medio}s, margen={margen_seguridad}s")
         _logger.info(f"WSSH === FIN DEBUG CONFIGURACIÓN ===")
         
         if not shopify_instance_ids:
             shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
-    
+
         for shopify_instance_id in shopify_instance_ids:
             base_url = self.get_customer_url(shopify_instance_id, endpoint='customers.json')
             access_token = shopify_instance_id.shopify_shared_secret
             headers = {"X-Shopify-Access-Token": access_token}
-    
-            params = {"limit": 20}
-    
+
+            params = {"limit": pagina_size}
+
             if shopify_instance_id.shopify_last_date_customer_import:
                 params["created_at_min"] = shopify_instance_id.shopify_last_date_customer_import
-    
-            if shopify_instance_id.shopify_last_import_customer_id:
-                _logger.info(f"WSSH Buscando por ID {shopify_instance_id.shopify_last_import_customer_id}")
-                params["since_id"] = shopify_instance_id.shopify_last_import_customer_id
-    
+
+            # Usar since_id: último ID procesado o 0 para comenzar desde el inicio
+            params["since_id"] = shopify_instance_id.shopify_last_import_customer_id or 0
+            _logger.info(f"WSSH Consulta con since_id: {params['since_id']} ({'continuando' if shopify_instance_id.shopify_last_import_customer_id else 'desde inicio'})")
+
             url = base_url
             import_complete = False
             last_customer_id = None
-    
+
             while True:
                 # Verificar si se está acercando al timeout
                 elapsed_time = time.time() - start_time
                 if elapsed_time > max_execution_time:
-                    _logger.warning(f"WSSH Tiempo límite alcanzado ({elapsed_time:.1f}s). Guardando progreso...")
+                    _logger.warning(f"WSSH Tiempo límite alcanzado ({elapsed_time:.1f}s de {max_execution_time}s). Guardando progreso...")
                     if last_customer_id:
-                        shopify_instance_id.write({'shopify_last_import_customer_id': str(last_customer_id)})
-                        _logger.info(f"WSSH Progreso guardado. Último ID: {last_customer_id}")
+                        try:
+                            # Usar método existente para escribir con reintentos
+                            shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', str(last_customer_id))
+                            _logger.info(f"WSSH Progreso guardado. Último ID: {last_customer_id}")
+                        except Exception as e:
+                            _logger.warning(f"WSSH Error guardando progreso después de reintentos: {str(e)}")
                     return True
-    
+
                 try:
-                    _logger.info(f"WSSH Captura clientes pagina {url}")
-                    response = requests.get(url, headers=headers, params=params, timeout=300)
+                    _logger.info(f"WSSH Captura clientes página {url}")
+                    _logger.info(f"WSSH Parámetros enviados: {params}")
+                    
+                    response = requests.get(url, headers=headers, params=params, timeout=tout_medio)
                     response.raise_for_status()
                     shopify_customers = response.json()
                     customers = shopify_customers.get('customers', [])
-    
+
                     if not customers:
                         import_complete = True
                         break
-    
+
+                    # Debug: mostrar IDs tal como vienen de la API
+                    customer_ids = [customer.get('id') for customer in customers]
+                    _logger.info(f"WSSH IDs recibidos (página {pagina_size}): {customer_ids[:3]}...{customer_ids[-3:] if len(customer_ids) > 3 else customer_ids}")
+                    _logger.info(f"WSSH Total clientes en página: {len(customers)} - Rango: {customers[0]['id']} a {customers[-1]['id']}")
+
                     for customer in customers:
                         customer['metafields'] = self.get_customer_metafields(customer.get('id'), shopify_instance_id)
-    
+
                     self.create_customers(customers, shopify_instance_id, skip_existing_customer)
+                    
+                    # Para IDs ascendentes, siempre guardamos el último (máximo) para usar en since_id
                     last_customer_id = customers[-1]['id']
-                    shopify_instance_id.write({'shopify_last_import_customer_id': str(last_customer_id)})
-    
+                    _logger.info(f"WSSH Página procesada en {time.time() - start_time:.1f}s. Guardando último ID: {last_customer_id}")
+                    
+                    # Usar método con reintentos para escribir progreso
+                    try:
+                        shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', str(last_customer_id))
+                    except Exception as e:
+                        _logger.warning(f"WSSH Error guardando progreso en página: {str(e)}")
+                        # Continuar aunque no se pueda guardar el progreso intermedio
+
                     link_header = response.headers.get('Link')
                     if link_header:
                         links = shopify_instance_id._parse_link_header(link_header)
@@ -131,21 +156,25 @@ class ResPartner(models.Model):
                             url = links['next']
                             params = None
                             continue
-    
+
                     import_complete = True
                     break
-    
+
                 except Exception as e:
                     _logger.warning("Error during customer import. Saved progress with last customer ID: %s. Error: %s", 
                                   last_customer_id if last_customer_id else 'N/A', str(e))
                     break
-    
+
             if import_complete:
-                shopify_instance_id.write({
-                    'shopify_last_import_customer_id': False,
-                    'shopify_last_date_customer_import': fields.Datetime.now()
-                })
-    
+                try:
+                    # Resetear ID de último import y actualizar fecha
+                    shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', False)
+                    shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_date_customer_import', fields.Datetime.now())
+                    _logger.info(f"WSSH Importación completada exitosamente en {time.time() - start_time:.1f}s")
+                except Exception as e:
+                    _logger.warning(f"WSSH Error actualizando fecha final después de reintentos: {str(e)}")
+                    # El proceso se completó exitosamente aunque no se pudo actualizar la fecha
+
         return True
 
 
