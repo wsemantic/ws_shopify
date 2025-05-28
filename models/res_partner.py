@@ -83,7 +83,7 @@ class ResPartner(models.Model):
             access_token = shopify_instance_id.shopify_shared_secret
             headers = {"X-Shopify-Access-Token": access_token}
     
-            params = {"limit": 250}
+            params = {"limit": 20}
     
             if shopify_instance_id.shopify_last_date_customer_import:
                 params["created_at_min"] = shopify_instance_id.shopify_last_date_customer_import
