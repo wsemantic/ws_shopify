@@ -82,6 +82,7 @@ class ResPartner(models.Model):
         if not shopify_instance_ids:
             shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
 
+        res_customers=[]
         for shopify_instance_id in shopify_instance_ids:
             base_url = self.get_customer_url(shopify_instance_id, endpoint='customers.json')
             access_token = shopify_instance_id.shopify_shared_secret
@@ -132,7 +133,7 @@ class ResPartner(models.Model):
                     for customer in customers:
                         customer['metafields'] = self.get_customer_metafields(customer.get('id'), shopify_instance_id)
 
-                    self.create_customers(customers, shopify_instance_id, skip_existing_customer)
+                    res_customers= self.create_customers(customers, shopify_instance_id, skip_existing_customer)
                     
                     # Para IDs ascendentes, siempre guardamos el último (máximo) para usar en since_id
                     last_customer_id = customers[-1]['id']
@@ -196,7 +197,7 @@ class ResPartner(models.Model):
                 shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_date_customer_import', fields.Datetime.now())
                 _logger.info(f"WSSH Importación completada exitosamente en {time.time() - start_time:.1f}s")
 
-        return True
+        return res_customers
 
 
     def get_customer_url(self, shopify_instance_id, endpoint):
