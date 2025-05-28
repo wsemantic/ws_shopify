@@ -4,8 +4,7 @@ import re
 import requests
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
-
-from odoo.exceptions import UserError
+from odoo.tools import config
 
 
 import logging
@@ -33,47 +32,61 @@ class ResPartner(models.Model):
             partner.shopify_exported = bool(partner.shopify_partner_map_ids)
 
     def import_shopify_customers(self, shopify_instance_ids, skip_existing_customer):
+        # Calcular tiempo máximo basado en configuración de Odoo
+        limit_time_real = config.get('limit_time_real', 120)
+        max_execution_time = limit_time_real - 20  # Margen de seguridad de 20s
+        
+        start_time = time.time()
+        _logger.info(f"WSSH Iniciando importación con timeout de {max_execution_time}s")
+        
         if not shopify_instance_ids:
             shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
-
+    
         for shopify_instance_id in shopify_instance_ids:
-            base_url = self.get_customer_url(shopify_instance_id, endpoint='customers.json')
+            url = self.get_customer_url(shopify_instance_id, endpoint='customers.json')
             access_token = shopify_instance_id.shopify_shared_secret
             headers = {"X-Shopify-Access-Token": access_token}
-
+    
             params = {"limit": 250}
-
+    
             if shopify_instance_id.shopify_last_date_customer_import:
                 params["created_at_min"] = shopify_instance_id.shopify_last_date_customer_import
-
+    
             if shopify_instance_id.shopify_last_import_customer_id:
                 _logger.info(f"WSSH Buscando por ID {shopify_instance_id.shopify_last_import_customer_id}")
                 params["since_id"] = shopify_instance_id.shopify_last_import_customer_id
-
-            url = base_url
+    
             import_complete = False
-
+            last_customer_id = None
+    
             while True:
+                # Verificar si se está acercando al timeout
+                elapsed_time = time.time() - start_time
+                if elapsed_time > max_execution_time:
+                    _logger.warning(f"WSSH Tiempo límite alcanzado ({elapsed_time:.1f}s). Guardando progreso...")
+                    if last_customer_id:
+                        shopify_instance_id.write({'shopify_last_import_customer_id': str(last_customer_id)})
+                        _logger.info(f"WSSH Progreso guardado. Último ID: {last_customer_id}")
+                    return True
+    
                 try:
                     _logger.info(f"WSSH Captura clientes pagina {url}")
                     response = requests.get(url, headers=headers, params=params, timeout=300)
                     response.raise_for_status()
                     shopify_customers = response.json()
                     customers = shopify_customers.get('customers', [])
-
+    
                     if not customers:
                         import_complete = True
                         break
-
+    
                     for customer in customers:
                         customer['metafields'] = self.get_customer_metafields(customer.get('id'), shopify_instance_id)
-
-                    self.env.cr.execute("BEGIN")
+    
                     self.create_customers(customers, shopify_instance_id, skip_existing_customer)
                     last_customer_id = customers[-1]['id']
                     shopify_instance_id.write({'shopify_last_import_customer_id': str(last_customer_id)})
-                    self.env.cr.commit()
-
+    
                     link_header = response.headers.get('Link')
                     if link_header:
                         links = shopify_instance_id._parse_link_header(link_header)
@@ -81,24 +94,21 @@ class ResPartner(models.Model):
                             url = links['next']
                             params = None
                             continue
-
+    
                     import_complete = True
                     break
-
-                except Timeout as e:
-                    self.env.cr.rollback()
-                    shopify_instance_id.write({'shopify_last_import_customer_id': str(last_customer_id)})
-                    self.env.cr.commit()
-                    _logger.warning("Operational or timeout error during customer import. Saved progress with last customer ID: %s. Error: %s", last_customer_id, str(e))
+    
+                except Exception as e:
+                    _logger.warning("Error during customer import. Saved progress with last customer ID: %s. Error: %s", 
+                                  last_customer_id if last_customer_id else 'N/A', str(e))
                     break
-
+    
             if import_complete:
                 shopify_instance_id.write({
                     'shopify_last_import_customer_id': False,
                     'shopify_last_date_customer_import': fields.Datetime.now()
                 })
-                self.env.cr.commit()
-
+    
         return True
 
 
