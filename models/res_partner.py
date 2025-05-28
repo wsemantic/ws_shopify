@@ -4,6 +4,10 @@ import re
 import requests
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
+
+from odoo.exceptions import UserError
+
+
 import logging
 
 _logger = logging.getLogger(__name__)
@@ -43,6 +47,7 @@ class ResPartner(models.Model):
                 params["created_at_min"] = shopify_instance_id.shopify_last_date_customer_import
 
             if shopify_instance_id.last_import_customer_id:
+                _logger.info(f"WSSH Buscando por ID {shopify_instance_id.last_import_customer_id}")
                 params["since_id"] = shopify_instance_id.last_import_customer_id
 
             url = base_url
@@ -50,6 +55,7 @@ class ResPartner(models.Model):
 
             while True:
                 try:
+                    _logger.info(f"WSSH Captura clientes pagina {url}")
                     response = requests.get(url, headers=headers, params=params, timeout=300)
                     response.raise_for_status()
                     shopify_customers = response.json()
@@ -79,7 +85,7 @@ class ResPartner(models.Model):
                     import_complete = True
                     break
 
-                except (requests.exceptions.Timeout, OperationalError) as e:
+                except Timeout as e:
                     self.env.cr.rollback()
                     shopify_instance_id.write({'last_import_customer_id': str(last_customer_id)})
                     self.env.cr.commit()
