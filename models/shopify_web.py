@@ -138,3 +138,29 @@ class ShopifyInstance(models.Model):
         # Esta expresión regular busca un '\' que no vaya seguido de n, t, r o \
         cleaned = re.sub(r'\\(?![ntr\\])', '', text)
         return cleaned
+        
+    def write_with_retry(self, record, field_name, value):
+        """
+        Escribe un valor en un campo de un registro con reintentos en caso de SerializationFailure.
+        
+        :param record: Registro en el que se escribirá (ej. shopify.web)
+        :param field_name: Nombre del campo a actualizar (ej. 'last_export_product')
+        :param value: Valor a escribir en el campo
+        """
+        from psycopg2 import errors
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                self.env.cr.execute("BEGIN")
+                record.write({field_name: value})
+                self.env.cr.commit()
+                _logger.info(f"WSSH Successfully wrote {field_name}={value} to record {record._name} (ID: {record.id})")
+                return
+            except errors.SerializationFailure as e:
+                self.env.cr.rollback()
+                if attempt < max_retries - 1:
+                    _logger.warning(f"WSSH Serialization failure when writing {field_name}, retrying {attempt + 1}/{max_retries}")
+                    time.sleep(5)
+                    continue
+                _logger.error(f"WSSH Failed to write {field_name} after {max_retries} retries: {str(e)}")
+                raise UserError(f"Error de concurrencia persistente al escribir {field_name}: {str(e)}")        
