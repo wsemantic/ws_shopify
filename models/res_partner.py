@@ -30,7 +30,7 @@ class ResPartner(models.Model):
         _logger.info(f"WSSH Context active_model: {self._context.get('active_model', 'No definido')}")
         
         # Configuración de timeouts y límites
-        tout_medio = 30  # Timeout medio para requests individuales
+        tout_medio = 300  # Timeout medio para requests individuales
         pagina_size = 20  # Tamaño de página para monitorización frecuente
         margen_seguridad = 60  # Margen de seguridad en segundos
         
@@ -59,7 +59,7 @@ class ResPartner(models.Model):
             # Validar que sea un valor razonable (entre 60s y 2 horas)
             if limit_time_real < 60:
                 _logger.warning(f"WSSH limit_time_real muy bajo: {limit_time_real}s, usando {tout_medio * 2}s")
-                limit_time_real = tout_medio * 2
+                limit_time_real = tout_medio
             elif limit_time_real > 7200:
                 _logger.warning(f"WSSH limit_time_real muy alto: {limit_time_real}s, usando {tout_medio * 2}s")  
                 limit_time_real = tout_medio * 2
