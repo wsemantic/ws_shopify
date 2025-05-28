@@ -35,7 +35,7 @@
                                     <group>
                                         <field name="shopify_last_date_product_import"/>
                                         <field name="shopify_last_date_customer_import"/>
-										<field name="last_import_customer_id"/>
+										<field name="shopify_last_import_customer_id"/>
                                     </group>
                                     <group>
                                         <field name="shopify_last_date_draftorder_import" invisible="1"/>
