@@ -22,17 +22,7 @@ class ResPartner(models.Model):
         string='Shopify Mappings'
     )
     
-    shopify_exported = fields.Boolean(
-        string="Exportado",
-        compute="_compute_shopify_exported",
-        store=True
-    )
 
-    @api.depends('shopify_partner_map_ids')
-    def _compute_shopify_exported(self):
-        for partner in self:
-            partner.shopify_exported = bool(partner.shopify_partner_map_ids)
-    
     def import_shopify_customers(self, shopify_instance_ids, skip_existing_customer):
         # Configuración de timeouts y límites
         tout_medio = 300  # Timeout medio para requests individuales
@@ -107,12 +97,9 @@ class ResPartner(models.Model):
                 if elapsed_time > max_execution_time:
                     _logger.warning(f"WSSH Tiempo límite alcanzado ({elapsed_time:.1f}s de {max_execution_time}s). Guardando progreso...")
                     if last_customer_id:
-                        try:
-                            # Usar método existente para escribir con reintentos
-                            shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', str(last_customer_id))
-                            _logger.info(f"WSSH Progreso guardado. Último ID: {last_customer_id}")
-                        except Exception as e:
-                            _logger.warning(f"WSSH Error guardando progreso después de reintentos: {str(e)}")
+                        # Guardar progreso - si falla, que aborte
+                        shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', str(last_customer_id))
+                        _logger.info(f"WSSH Progreso guardado. Último ID: {last_customer_id}")
                     return True
 
                 try:
@@ -140,14 +127,9 @@ class ResPartner(models.Model):
                     
                     # Para IDs ascendentes, siempre guardamos el último (máximo) para usar en since_id
                     last_customer_id = customers[-1]['id']
-                    _logger.info(f"WSSH Página procesada en {time.time() - start_time:.1f}s. Guardando último ID: {last_customer_id}")
+                    _logger.info(f"WSSH Página procesada en {time.time() - start_time:.1f}s. Último ID en memoria: {last_customer_id}")
                     
-                    # Usar método con reintentos para escribir progreso
-                    try:
-                        shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', str(last_customer_id))
-                    except Exception as e:
-                        _logger.warning(f"WSSH Error guardando progreso en página: {str(e)}")
-                        # Continuar aunque no se pueda guardar el progreso intermedio
+                    # NO guardar progreso en cada página - solo trackear en memoria
 
                     link_header = response.headers.get('Link')
                     if link_header:
@@ -161,19 +143,41 @@ class ResPartner(models.Model):
                     break
 
                 except Exception as e:
-                    _logger.warning("Error during customer import. Saved progress with last customer ID: %s. Error: %s", 
-                                  last_customer_id if last_customer_id else 'N/A', str(e))
+                    # Determinar si la excepción permite guardar progreso (no causa rollback)
+                    save_progress_allowed = False
+                    
+                    # Excepciones que NO causan rollback - seguro guardar progreso
+                    if isinstance(e, (requests.exceptions.RequestException, 
+                                    requests.exceptions.Timeout,
+                                    requests.exceptions.ConnectionError,
+                                    ValueError, TypeError, KeyError,
+                                    UnicodeError, AttributeError)):
+                        save_progress_allowed = True
+                        error_type = "Sin rollback"
+                    else:
+                        # Excepciones de BD, validación, etc. - NO guardar progreso
+                        error_type = "Con rollback"
+                    
+                    _logger.warning("Error during customer import (%s). Last customer ID: %s. Error: %s", 
+                                  error_type, last_customer_id or 'N/A', str(e))
+                    
+                    # Solo guardar progreso si la excepción no causa rollback
+                    if save_progress_allowed and last_customer_id:
+                        try:
+                            shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', str(last_customer_id))
+                            _logger.info(f"WSSH Progreso guardado tras error sin rollback. Último ID: {last_customer_id}")
+                        except Exception as save_error:
+                            _logger.error(f"WSSH Error guardando progreso: {save_error}")
+                    elif last_customer_id:
+                        _logger.warning(f"WSSH Progreso NO guardado - excepción puede causar rollback")
+                    
                     break
 
             if import_complete:
-                try:
-                    # Resetear ID de último import y actualizar fecha
-                    shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', False)
-                    shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_date_customer_import', fields.Datetime.now())
-                    _logger.info(f"WSSH Importación completada exitosamente en {time.time() - start_time:.1f}s")
-                except Exception as e:
-                    _logger.warning(f"WSSH Error actualizando fecha final después de reintentos: {str(e)}")
-                    # El proceso se completó exitosamente aunque no se pudo actualizar la fecha
+                # Resetear ID de último import y actualizar fecha - si falla, que aborte
+                shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', False)
+                shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_date_customer_import', fields.Datetime.now())
+                _logger.info(f"WSSH Importación completada exitosamente en {time.time() - start_time:.1f}s")
 
         return True
 
