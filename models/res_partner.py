@@ -34,6 +34,9 @@ class ResPartner(models.Model):
         pagina_size = 20  # Tamaño de página para monitorización frecuente
         margen_seguridad = 60  # Margen de seguridad en segundos
         
+        # Debug de variables
+        _logger.info(f"WSSH Variables definidas: tout_medio={tout_medio}, pagina_size={pagina_size}, margen={margen_seguridad}")
+        
         # Debug completo de la configuración
         _logger.info(f"WSSH === DEBUG CONFIGURACIÓN ===")
         limit_time_real_raw = config.get('limit_time_real')  # Sin default para ver el valor real
@@ -49,8 +52,8 @@ class ResPartner(models.Model):
             
             if raw_value is None:
                 # No está configurado, usar default
-                limit_time_real = tout_medio * 2  # Default más conservador
-                _logger.info(f"WSSH limit_time_real no configurado, usando default: {limit_time_real}s")
+                limit_time_real = tout_medio  # Default más conservador
+                _logger.info(f"WSSH limit_time_real no configurado, usando default: {limit_time_real}s (tout_medio={tout_medio})")
             else:
                 # Está configurado, convertir a int
                 limit_time_real = int(str(raw_value).strip())
@@ -60,9 +63,11 @@ class ResPartner(models.Model):
             if limit_time_real < 60:
                 _logger.warning(f"WSSH limit_time_real muy bajo: {limit_time_real}s, usando {tout_medio * 2}s")
                 limit_time_real = tout_medio
+                _logger.info(f"WSSH Valor corregido: limit_time_real={limit_time_real}s")
             elif limit_time_real > 7200:
                 _logger.warning(f"WSSH limit_time_real muy alto: {limit_time_real}s, usando {tout_medio * 2}s")  
                 limit_time_real = tout_medio * 2
+                _logger.info(f"WSSH Valor corregido: limit_time_real={limit_time_real}s")  # 600s, no 60s
                 
         except (ValueError, TypeError) as e:
             _logger.error(f"WSSH Error procesando limit_time_real '{raw_value}': {e}, usando {tout_medio * 2}s")
@@ -73,16 +78,19 @@ class ResPartner(models.Model):
         # Asegurar que el timeout sea positivo
         if max_execution_time <= 0:
             _logger.warning(f"WSSH Timeout calculado negativo o cero ({max_execution_time}s), usando mínimo de 120s")
-            max_execution_time = 120                                            
+            max_execution_time = 120
+        
         start_time = time.time()
         _logger.info(f"WSSH Timeout final calculado: {max_execution_time}s (desde limit_time_real: {limit_time_real}s)")
-        _logger.info(f"WSSH Configuración: página_size={pagina_size}, tout_medio={tout_medio}s, margen={margen_seguridad}s")
+        _logger.info(f"WSSH Configuración final: página_size={pagina_size}, tout_medio={tout_medio}s, margen={margen_seguridad}s")
         _logger.info(f"WSSH === FIN DEBUG CONFIGURACIÓN ===")
         
         if not shopify_instance_ids:
             shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
 
-        res_customers=[]
+        # Acumular todos los IDs de partners procesados
+        all_customer_ids = []
+
         for shopify_instance_id in shopify_instance_ids:
             base_url = self.get_customer_url(shopify_instance_id, endpoint='customers.json')
             access_token = shopify_instance_id.shopify_shared_secret
@@ -110,7 +118,7 @@ class ResPartner(models.Model):
                         # Guardar progreso - si falla, que aborte
                         shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', str(last_customer_id))
                         _logger.info(f"WSSH Progreso guardado. Último ID: {last_customer_id}")
-                    return True
+                    return all_customer_ids  # Retornar lista de IDs de partners procesados
 
                 try:
                     _logger.info(f"WSSH Captura clientes página {url}")
@@ -133,7 +141,7 @@ class ResPartner(models.Model):
                     for customer in customers:
                         customer['metafields'] = self.get_customer_metafields(customer.get('id'), shopify_instance_id)
 
-                    res_customers= self.create_customers(customers, shopify_instance_id, skip_existing_customer)
+                    all_customer_ids = self.create_customers(customers, shopify_instance_id, skip_existing_customer)
                     
                     # Para IDs ascendentes, siempre guardamos el último (máximo) para usar en since_id
                     last_customer_id = customers[-1]['id']
@@ -147,12 +155,37 @@ class ResPartner(models.Model):
                         if 'next' in links:
                             url = links['next']
                             params = None
+                            # Delay para respetar rate limits de Shopify
+                            _logger.info("WSSH Esperando 2s antes de siguiente página para respetar rate limits")
+                            time.sleep(2)
                             continue
 
                     import_complete = True
                     break
 
-                except Exception as e:
+                except requests.exceptions.HTTPError as e:
+                    if e.response and e.response.status_code == 429:
+                        # Rate limit específico de Shopify
+                        retry_after = int(e.response.headers.get('Retry-After', 10))
+                        _logger.warning(f"WSSH Rate limit alcanzado. Esperando {retry_after}s antes de reintentar...")
+                        time.sleep(retry_after)
+                        # Reintentar la misma página
+                        continue
+                    else:
+                        # Otros errores HTTP - manejar como antes
+                        tb_str = traceback.format_exc()
+                        _logger.error(f"WSSH Traceback completo:\n{tb_str}")
+                        
+                        _logger.warning("Error during customer import (Sin rollback). Last customer ID: %s. Error: %s", 
+                                      last_customer_id or 'N/A', str(e))
+                        
+                        if last_customer_id:
+                            try:
+                                shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', str(last_customer_id))
+                                _logger.info(f"WSSH Progreso guardado tras error HTTP. Último ID: {last_customer_id}")
+                            except Exception as save_error:
+                                _logger.error(f"WSSH Error guardando progreso: {save_error}")
+                        break
                     # Obtener traceback completo para debugging
                     tb_str = traceback.format_exc()
                     _logger.error(f"WSSH Traceback completo:\n{tb_str}")
@@ -197,7 +230,7 @@ class ResPartner(models.Model):
                 shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_date_customer_import', fields.Datetime.now())
                 _logger.info(f"WSSH Importación completada exitosamente en {time.time() - start_time:.1f}s")
 
-        return res_customers
+        return all_customer_ids
 
 
     def get_customer_url(self, shopify_instance_id, endpoint):
