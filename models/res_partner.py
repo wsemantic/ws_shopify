@@ -330,7 +330,9 @@ class ResPartner(models.Model):
 
     def _get_customer_name(self, first_name, last_name, email):
         """Genera el nombre del cliente a partir de first_name y last_name, con email como fallback."""
-        name = (first_name + ' ' + last_name).strip()
+        name = first_name
+        if first_name and last_name:
+            name = (first_name + ' ' + last_name).strip()
         return name or email or _("Shopify Customer")
 
     def _find_existing_partner(self, shopify_customer, shopify_instance_id):
