@@ -46,9 +46,9 @@ class ResPartner(models.Model):
             if shopify_instance_id.shopify_last_date_customer_import:
                 params["created_at_min"] = shopify_instance_id.shopify_last_date_customer_import
 
-            if shopify_instance_id.last_import_customer_id:
-                _logger.info(f"WSSH Buscando por ID {shopify_instance_id.last_import_customer_id}")
-                params["since_id"] = shopify_instance_id.last_import_customer_id
+            if shopify_instance_id.shopify_last_import_customer_id:
+                _logger.info(f"WSSH Buscando por ID {shopify_instance_id.shopify_last_import_customer_id}")
+                params["since_id"] = shopify_instance_id.shopify_last_import_customer_id
 
             url = base_url
             import_complete = False
@@ -71,7 +71,7 @@ class ResPartner(models.Model):
                     self.env.cr.execute("BEGIN")
                     self.create_customers(customers, shopify_instance_id, skip_existing_customer)
                     last_customer_id = customers[-1]['id']
-                    shopify_instance_id.write({'last_import_customer_id': str(last_customer_id)})
+                    shopify_instance_id.write({'shopify_last_import_customer_id': str(last_customer_id)})
                     self.env.cr.commit()
 
                     link_header = response.headers.get('Link')
@@ -87,14 +87,14 @@ class ResPartner(models.Model):
 
                 except Timeout as e:
                     self.env.cr.rollback()
-                    shopify_instance_id.write({'last_import_customer_id': str(last_customer_id)})
+                    shopify_instance_id.write({'shopify_last_import_customer_id': str(last_customer_id)})
                     self.env.cr.commit()
                     _logger.warning("Operational or timeout error during customer import. Saved progress with last customer ID: %s. Error: %s", last_customer_id, str(e))
                     break
 
             if import_complete:
                 shopify_instance_id.write({
-                    'last_import_customer_id': False,
+                    'shopify_last_import_customer_id': False,
                     'shopify_last_date_customer_import': fields.Datetime.now()
                 })
                 self.env.cr.commit()

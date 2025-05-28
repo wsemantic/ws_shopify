@@ -36,7 +36,7 @@ class ShopifyInstance(models.Model):
     
     last_export_stock_id = fields.Integer(string="Último ID Stock exportado", default=0, help="ID del último stock exportado")
     last_export_product_id = fields.Integer(string="Último ID Producto exportado", default=0, help="ID del último producto exportado")
-    last_import_customer_id = fields.Integer(string="Último ID Cliente importado", default=0, help="ID del último Cliente importado")
+    shopify_last_import_customer_id = fields.Char(string="Último ID Cliente importado", help="ID del último Cliente importado")
     salesperson_id = fields.Many2one(
         'res.users', 
         string='Salesperson', 
