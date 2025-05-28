@@ -31,8 +31,8 @@ class ResPartner(models.Model):
         
         # Configuración de timeouts y límites
         tout_medio = 300  # Timeout medio para requests individuales
-        pagina_size = 100  # Tamaño de página para monitorización frecuente
-        margen_seguridad = 60  # Margen de seguridad en segundos
+        pagina_size = 60  # Tamaño de página para monitorización frecuente
+        margen_seguridad = 100  # Margen de seguridad en segundos
         
         # Debug de variables
         _logger.info(f"WSSH Variables definidas: tout_medio={tout_medio}, pagina_size={pagina_size}, margen={margen_seguridad}")
@@ -61,17 +61,17 @@ class ResPartner(models.Model):
                 
             # Validar que sea un valor razonable (entre 60s y 2 horas)
             if limit_time_real < 60:
-                _logger.warning(f"WSSH limit_time_real muy bajo: {limit_time_real}s, usando {tout_medio * 2}s")
+                _logger.warning(f"WSSH limit_time_real muy bajo: {limit_time_real}s, usando {tout_medio}s")
                 limit_time_real = tout_medio
                 _logger.info(f"WSSH Valor corregido: limit_time_real={limit_time_real}s")
             elif limit_time_real > 7200:
-                _logger.warning(f"WSSH limit_time_real muy alto: {limit_time_real}s, usando {tout_medio * 2}s")  
-                limit_time_real = tout_medio * 2
+                _logger.warning(f"WSSH limit_time_real muy alto: {limit_time_real}s, usando {tout_medio}s")  
+                limit_time_real = tout_medio 
                 _logger.info(f"WSSH Valor corregido: limit_time_real={limit_time_real}s")  # 600s, no 60s
                 
         except (ValueError, TypeError) as e:
             _logger.error(f"WSSH Error procesando limit_time_real '{raw_value}': {e}, usando {tout_medio * 2}s")
-            limit_time_real = tout_medio * 2
+            limit_time_real = tout_medio
         
         max_execution_time = limit_time_real - margen_seguridad  # Margen de seguridad
         
