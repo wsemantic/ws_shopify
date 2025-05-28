@@ -54,7 +54,7 @@ class ShopifyOperation(models.TransientModel):
             customers = self.env['res.partner'].import_shopify_customers(self.shopify_instance_id,
                                                                          self.skip_existing_customer)
             if customers:
-                self.shopify_instance_id.shopify_last_date_customer_import = datetime.now()
+                
                 ids = customers
                 action_name = "ws_shopify.action_shopify_customer"
         elif self.shopify_operation == 'import_shopify_products':
