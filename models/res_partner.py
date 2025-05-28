@@ -3,10 +3,11 @@ import json
 import re
 import requests
 import time
+import traceback
 from odoo import api, fields, models, _
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError,ValidationError, UserError, AccessError
 from odoo.tools import config
-
+from psycopg2 import Error as PostgresError
 
 
 import logging
@@ -24,6 +25,10 @@ class ResPartner(models.Model):
     
 
     def import_shopify_customers(self, shopify_instance_ids, skip_existing_customer):
+        # Verificar que no hay problemas con el contexto
+        _logger.info(f"WSSH Context active_ids: {self._context.get('active_ids', 'No definido')}")
+        _logger.info(f"WSSH Context active_model: {self._context.get('active_model', 'No definido')}")
+        
         # Configuración de timeouts y límites
         tout_medio = 300  # Timeout medio para requests individuales
         pagina_size = 20  # Tamaño de página para monitorización frecuente
@@ -143,6 +148,10 @@ class ResPartner(models.Model):
                     break
 
                 except Exception as e:
+                    # Obtener traceback completo para debugging
+                    tb_str = traceback.format_exc()
+                    _logger.error(f"WSSH Traceback completo:\n{tb_str}")
+                    
                     # Determinar si la excepción permite guardar progreso (no causa rollback)
                     save_progress_allowed = False
                     
@@ -151,12 +160,16 @@ class ResPartner(models.Model):
                                     requests.exceptions.Timeout,
                                     requests.exceptions.ConnectionError,
                                     ValueError, TypeError, KeyError,
-                                    UnicodeError, AttributeError)):
+                                    UnicodeError, AttributeError)) and not isinstance(e, (PostgresError, ValidationError, UserError, AccessError)):
                         save_progress_allowed = True
                         error_type = "Sin rollback"
                     else:
-                        # Excepciones de BD, validación, etc. - NO guardar progreso
+                        # Excepciones de BD (PostgreSQL), validación de Odoo, etc. - NO guardar progreso
                         error_type = "Con rollback"
+                        if isinstance(e, PostgresError):
+                            _logger.error(f"WSSH Error PostgreSQL detectado: {type(e).__name__}")
+                        elif isinstance(e, (ValidationError, UserError, AccessError)):
+                            _logger.error(f"WSSH Error Odoo detectado: {type(e).__name__}")
                     
                     _logger.warning("Error during customer import (%s). Last customer ID: %s. Error: %s", 
                                   error_type, last_customer_id or 'N/A', str(e))
@@ -169,7 +182,7 @@ class ResPartner(models.Model):
                         except Exception as save_error:
                             _logger.error(f"WSSH Error guardando progreso: {save_error}")
                     elif last_customer_id:
-                        _logger.warning(f"WSSH Progreso NO guardado - excepción puede causar rollback")
+                        _logger.warning(f"WSSH Progreso NO guardado - excepción causa rollback")
                     
                     break
 
