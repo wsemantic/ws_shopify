@@ -88,6 +88,7 @@ class SaleOrder(models.Model):
 
         return order_list   
 
+
     def prepare_shopify_order_vals(self, shopify_instance_id, order, skip_existing_order):
         # Paso 1: Detectar si el pedido contiene un producto de "Recargo de Equivalencia"
         apply_recargo_fiscal_position = False
@@ -96,7 +97,7 @@ class SaleOrder(models.Model):
             if re.search(r'recargo.*equivalencia', product_name, re.IGNORECASE):
                 apply_recargo_fiscal_position = True
                 break  # No necesitamos seguir buscando
-    
+
         # Procesar el cliente y preparar los valores del pedido
         if order.get('customer'):
             res_partner = self.env['res.partner'].get_or_create_partner_from_shopify(order.get('customer'), shopify_instance_id)
@@ -105,7 +106,7 @@ class SaleOrder(models.Model):
                                                   
                 dt_utc = dt.astimezone(utc)  # Convertir a UTC
                 date_order_value = fields.Datetime.to_string(dt_utc)
-    
+
                 # Paso 2: Asignar la posición fiscal al cliente si aplica recargo
                 if apply_recargo_fiscal_position:
                     fiscal_position = self.env.ref('l10n_es.1_fp_recargo')
@@ -114,16 +115,30 @@ class SaleOrder(models.Model):
                         _logger.info(f"WSSH Asignada posición fiscal de recargo al cliente {res_partner.name}")
                     else:
                         raise UserError(_(f"WSSH Posición fiscal de recargo no encontrada"))
-    
+
+                # Procesar dirección de envío
+                partner_shipping_id = res_partner.id  # Por defecto, usar el mismo partner
+                shipping_address = order.get('shipping_address')
+                if shipping_address:
+                    # Verificar si la dirección de envío es diferente a la de facturación
+                    billing_address = order.get('billing_address') or order.get('customer', {}).get('default_address', {})
+                    if res_partner.addresses_are_different(shipping_address, billing_address):
+                        # Crear o buscar partner hijo para dirección de envío
+                        partner_shipping_id = res_partner.get_or_create_shipping_partner(
+                            shipping_address, res_partner, shopify_instance_id
+                        )
+                        _logger.info(f"WSSH Dirección de envío diferente procesada para pedido {order.get('name')}")
+
                 # Preparar valores para el pedido
                 sale_order_vals = {
                     'partner_id': res_partner.id,
+                    'partner_shipping_id': partner_shipping_id,
                     'name': order.get('name'),
                     'create_date': date_order_value,
                     'date_order': date_order_value,
                     'user_id': shopify_instance_id.salesperson_id.id if shopify_instance_id.salesperson_id else False,
                 }
-    
+
                 # Crear el pedido
                 sale_order_rec = self.sudo().create(sale_order_vals)
                                              
@@ -131,12 +146,12 @@ class SaleOrder(models.Model):
                   
                                                                       
                 sale_order_rec.state = 'draft'
-    
+
                 # Paso 3: Asignar la posición fiscal al pedido si aplica recargo
                 if apply_recargo_fiscal_position and fiscal_position:
                     sale_order_rec.fiscal_position_id = fiscal_position.id
                     _logger.info(f"WSSH Asignada posición fiscal de recargo al pedido {sale_order_rec.name}")
-    
+
                 # Crear el mapeo con Shopify
                 map_vals = {
                     'order_id': sale_order_rec.id,
@@ -145,10 +160,10 @@ class SaleOrder(models.Model):
                 }
                 shopify_map = self.env['shopify.order.map'].sudo().create(map_vals)
                 sale_order_rec.write({'shopify_order_map_ids': [(4, shopify_map.id)]})
-    
+
                 # Procesar las líneas del pedido
                 self.create_shopify_order_line(sale_order_rec, order, skip_existing_order, shopify_instance_id)
-    
+
                 return sale_order_rec
                 
     def create_shopify_order_line(self, shopify_order_id, order, skip_existing_order, shopify_instance_id):

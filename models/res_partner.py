@@ -32,25 +32,42 @@ class ResPartner(models.Model):
         if not shopify_instance_ids:
             shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
 
-        _logger.info("WSSH Import customer %i instancias", len(shopify_instance_ids))
         for shopify_instance_id in shopify_instance_ids:
-            _logger.info("WSSH Dentro de instance %s", shopify_instance_id.name)
-            url = self.get_customer_url(shopify_instance_id, endpoint='customers.json')
+            base_url = self.get_customer_url(shopify_instance_id, endpoint='customers.json')
             access_token = shopify_instance_id.shopify_shared_secret
             headers = {"X-Shopify-Access-Token": access_token}
-            params = {"limit": 250, "pageInfo": None}
+
+            params = {"limit": 250}
+
             if shopify_instance_id.shopify_last_date_customer_import:
                 params["created_at_min"] = shopify_instance_id.shopify_last_date_customer_import
 
-            all_customers = []
+            if shopify_instance_id.last_import_customer_id:
+                params["since_id"] = shopify_instance_id.last_import_customer_id
+
+            url = base_url
+            import_complete = False
+
             while True:
-                _logger.info("WSSH Iteración response")
-                response = requests.get(url, headers=headers, params=params)
-                if response.status_code == 200 and response.content:
+                try:
+                    response = requests.get(url, headers=headers, params=params, timeout=300)
+                    response.raise_for_status()
                     shopify_customers = response.json()
                     customers = shopify_customers.get('customers', [])
-                    all_customers.extend(customers)
-                    _logger.info(f"WSSH Iteración response n {len(all_customers)}")
+
+                    if not customers:
+                        import_complete = True
+                        break
+
+                    for customer in customers:
+                        customer['metafields'] = self.get_customer_metafields(customer.get('id'), shopify_instance_id)
+
+                    self.env.cr.execute("BEGIN")
+                    self.create_customers(customers, shopify_instance_id, skip_existing_customer)
+                    last_customer_id = customers[-1]['id']
+                    shopify_instance_id.write({'last_import_customer_id': str(last_customer_id)})
+                    self.env.cr.commit()
+
                     link_header = response.headers.get('Link')
                     if link_header:
                         links = shopify_instance_id._parse_link_header(link_header)
@@ -58,20 +75,26 @@ class ResPartner(models.Model):
                             url = links['next']
                             params = None
                             continue
-                break
-            _logger.info("WSSH Found %d customers to import for instance %s", len(all_customers), shopify_instance_id.name)
-            
-            if all_customers:
-                # Obtener metafields para cada cliente
-                for customer in all_customers:
-                    customer['metafields'] = self.get_customer_metafields(customer.get('id'), shopify_instance_id)
-                
-                customer_ids = self.create_customers(all_customers, shopify_instance_id, skip_existing_customer)
-                shopify_instance_id.shopify_last_date_customer_import = fields.Datetime.now()
-                return customer_ids
-            else:
-                _logger.info("WSSH No customers found in Shopify store for instance %s", shopify_instance_id.name)
-                return []
+
+                    import_complete = True
+                    break
+
+                except (requests.exceptions.Timeout, OperationalError) as e:
+                    self.env.cr.rollback()
+                    shopify_instance_id.write({'last_import_customer_id': str(last_customer_id)})
+                    self.env.cr.commit()
+                    _logger.warning("Operational or timeout error during customer import. Saved progress with last customer ID: %s. Error: %s", last_customer_id, str(e))
+                    break
+
+            if import_complete:
+                shopify_instance_id.write({
+                    'last_import_customer_id': False,
+                    'shopify_last_date_customer_import': fields.Datetime.now()
+                })
+                self.env.cr.commit()
+
+        return True
+
 
     def get_customer_url(self, shopify_instance_id, endpoint):
         return f"https://{shopify_instance_id.shopify_host}.myshopify.com/admin/api/{shopify_instance_id.shopify_version}/{endpoint}"
@@ -99,12 +122,16 @@ class ResPartner(models.Model):
             return metafields
         return {}
 
+
     def prepare_customer_vals(self, shopify_customer, shopify_instance_id):
         """Prepara los valores para crear o actualizar un cliente."""
                                                   
         addresses = shopify_customer.get('default_address', {})
         first_address = addresses
         metafields = shopify_customer.get('metafields', {})
+        
+        # Usar el nuevo método para procesar la dirección base
+        address_vals = self.prepare_address_vals(first_address, shopify_instance_id, 'invoice')
                                                                              
         first_name = shopify_customer.get('first_name') or first_address.get('first_name') or ''
         last_name = shopify_customer.get('last_name') or first_address.get('last_name') or ''
@@ -112,26 +139,16 @@ class ResPartner(models.Model):
         phone = shopify_customer.get('phone') or first_address.get('phone') or ''
         name = self._get_customer_name(first_name, last_name, email)                                                                        
 
-        street = first_address.get('address1')
-        street2 = first_address.get('address2')
-        city = first_address.get('city')
-        zip = first_address.get('zip')
-        country_code = first_address.get('country_code')
-        country_id = self.env['res.country'].sudo().search([('code', '=', country_code)], limit=1).id if country_code else False
-
-        vals = {
+        # Combinar datos del cliente con los de la dirección
+        vals = address_vals.copy()
+        vals.update({
             'name': name,
             'customer_rank': 1,
             'email': email,
             'phone': phone,
             'ref': metafields.get('ref') or ('SID' + str(shopify_customer.get('id'))),
-            'street': street,
-            'street2': street2,
-            'city': city,
-            'zip': zip,
-            'country_id': country_id,
             'user_id': shopify_instance_id.salesperson_id.id if shopify_instance_id.salesperson_id else False,  # Asignar comercial
-        }
+        })
         
         # Añadir metafields adicionales
         if 'vat' in metafields:
@@ -379,3 +396,91 @@ class ResPartner(models.Model):
             'target': 'new',
             'context': {},
         }
+        
+# Añadir estos métodos a la clase ResPartner en res_partner.py
+
+    def prepare_address_vals(self, address_data, shopify_instance_id, address_type='contact'):
+        """Prepara los valores para crear o actualizar una dirección específica."""
+        if not address_data:
+            return {}
+            
+        first_name = address_data.get('first_name', '')
+        last_name = address_data.get('last_name', '')
+        email = address_data.get('email', '')
+        phone = address_data.get('phone', '')
+        name = self._get_customer_name(first_name, last_name, email)
+        
+        street = address_data.get('address1')
+        street2 = address_data.get('address2')
+        city = address_data.get('city')
+        zip = address_data.get('zip')
+        country_code = address_data.get('country_code')
+        country_id = self.env['res.country'].sudo().search([('code', '=', country_code)], limit=1).id if country_code else False
+        
+        vals = {
+            'name': name,
+            'street': street,
+            'street2': street2,
+            'city': city,
+            'zip': zip,
+            'phone': phone,
+            'country_id': country_id,
+            'is_company': False,
+            'supplier_rank': 0,
+            'customer_rank': 1 if address_type == 'invoice' else 0,
+        }
+        
+        return vals
+
+    def get_or_create_shipping_partner(self, shipping_address, parent_partner, shopify_instance_id):
+        """Busca o crea un partner hijo para dirección de envío."""
+        if not shipping_address:
+            return parent_partner.id
+            
+        # Buscar partner hijo existente con los mismos datos
+        address_vals = self.prepare_address_vals(shipping_address, shopify_instance_id, 'delivery')
+        
+        # Buscar por dirección similar en los hijos del partner
+        domain = [
+            ('parent_id', '=', parent_partner.id),
+            ('type', '=', 'delivery')
+        ]
+        
+        # Añadir filtros por campos clave si existen
+        if address_vals.get('street'):
+            domain.append(('street', '=', address_vals['street']))
+        if address_vals.get('city'):
+            domain.append(('city', '=', address_vals['city']))
+        if address_vals.get('zip'):
+            domain.append(('zip', '=', address_vals['zip']))
+            
+        existing_shipping_partner = self.search(domain, limit=1)
+        
+        if existing_shipping_partner:
+            return existing_shipping_partner.id
+        else:
+            # Crear nuevo partner hijo para dirección de envío
+            address_vals.update({
+                'parent_id': parent_partner.id,
+                'type': 'delivery',
+                'customer_rank': 0,
+            })
+            shipping_partner = self.create(address_vals)
+            _logger.info(f"WSSH Creado partner de envío: {shipping_partner.name} para {parent_partner.name}")
+            return shipping_partner.id
+
+    def addresses_are_different(self, shipping_address, billing_address):
+        """Compara si dos direcciones son diferentes."""
+        if not shipping_address or not billing_address:
+            return bool(shipping_address)  # Diferentes si solo una existe
+            
+        # Campos clave para comparar
+        key_fields = ['address1', 'address2', 'city', 'zip', 'country_code', 'province_code']
+        
+        for field in key_fields:
+            ship_val = (shipping_address.get(field) or '').strip()
+            bill_val = (billing_address.get(field) or '').strip()
+            if ship_val != bill_val:
+                return True
+                
+        return False        
