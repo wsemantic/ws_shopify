@@ -31,7 +31,7 @@ class ResPartner(models.Model):
         
         # Configuración de timeouts y límites
         tout_medio = 300  # Timeout medio para requests individuales
-        pagina_size = 20  # Tamaño de página para monitorización frecuente
+        pagina_size = 100  # Tamaño de página para monitorización frecuente
         margen_seguridad = 60  # Margen de seguridad en segundos
         
         # Debug de variables
