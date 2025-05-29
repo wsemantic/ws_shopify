@@ -160,7 +160,8 @@ class ShopifyInstance(models.Model):
                 _logger.info(f"WSSH Successfully wrote {field_name}={value} to record {record._name} (ID: {record.id})")
                 return
             except errors.SerializationFailure as e:
-                self.env.cr.rollback()
+                if transaccional:
+                    self.env.cr.rollback()
                 if attempt < max_retries - 1:
                     _logger.warning(f"WSSH Serialization failure when writing {field_name}, retrying {attempt + 1}/{max_retries}")
                     time.sleep(5)
