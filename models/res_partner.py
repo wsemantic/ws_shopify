@@ -297,12 +297,14 @@ class ResPartner(models.Model):
         customer_list = []
         for shopify_customer in shopify_customers:
             partner = self._find_existing_partner(shopify_customer, shopify_instance_id)
-            if partner:
-                _logger.info(f"WSSH Partner existente encontrado {partner.name} id {shopify_customer.get('id')} skip {skip_existing_customer}")
+            if partner:                
                 mapping = partner.shopify_partner_map_ids.filtered(lambda m: m.shopify_instance_id == shopify_instance_id)
+                
                 if mapping:
+                    _logger.info(f"WSSH Partner existente encontrado {partner.name} id {shopify_customer.get('id')} skip {skip_existing_customer} existia mapping")
                     mapping.write({'shopify_partner_id': shopify_customer.get('id')})
                 else:
+                    _logger.info(f"WSSH Partner existente encontrado {partner.name} id {shopify_customer.get('id')} skip {skip_existing_customer} creando mapping partner id{partner.id} instance{shopify_instance_id.id}")
                     self.env['shopify.partner.map'].create({
                         'partner_id': partner.id,
                         'shopify_partner_id': shopify_customer.get('id'),
