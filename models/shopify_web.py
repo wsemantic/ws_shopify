@@ -140,7 +140,7 @@ class ShopifyInstance(models.Model):
         cleaned = re.sub(r'\\(?![ntr\\])', '', text)
         return cleaned
         
-    def write_with_retry(self, record, field_name, value):
+    def write_with_retry(self, record, field_name, value, transaccional=True):
         """
         Escribe un valor en un campo de un registro con reintentos en caso de SerializationFailure.
         
@@ -152,9 +152,11 @@ class ShopifyInstance(models.Model):
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                self.env.cr.execute("BEGIN")
+                if transaccional:
+                    self.env.cr.execute("BEGIN")
                 record.write({field_name: value})
-                self.env.cr.commit()
+                if transaccional:
+                    self.env.cr.commit()
                 _logger.info(f"WSSH Successfully wrote {field_name}={value} to record {record._name} (ID: {record.id})")
                 return
             except errors.SerializationFailure as e:

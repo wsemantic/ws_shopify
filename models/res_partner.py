@@ -116,7 +116,7 @@ class ResPartner(models.Model):
                     _logger.warning(f"WSSH Tiempo límite alcanzado ({elapsed_time:.1f}s de {max_execution_time}s). Guardando progreso...")
                     if last_customer_id:
                         # Guardar progreso - si falla, que aborte
-                        shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', str(last_customer_id))
+                        shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', str(last_customer_id),False)
                         _logger.info(f"WSSH Progreso guardado. Último ID: {last_customer_id}")
                     return all_customer_ids  # Retornar lista de IDs de partners procesados
 
@@ -181,7 +181,7 @@ class ResPartner(models.Model):
                         
                         if last_customer_id:
                             try:
-                                shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', str(last_customer_id))
+                                shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', str(last_customer_id),False)
                                 _logger.info(f"WSSH Progreso guardado tras error HTTP. Último ID: {last_customer_id}")
                             except Exception as save_error:
                                 _logger.error(f"WSSH Error guardando progreso: {save_error}")
@@ -215,7 +215,7 @@ class ResPartner(models.Model):
                     # Solo guardar progreso si la excepción no causa rollback
                     if save_progress_allowed and last_customer_id:
                         try:
-                            shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', str(last_customer_id))
+                            shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', str(last_customer_id),False)
                             _logger.info(f"WSSH Progreso guardado tras error sin rollback. Último ID: {last_customer_id}")
                         except Exception as save_error:
                             _logger.error(f"WSSH Error guardando progreso: {save_error}")
@@ -226,8 +226,8 @@ class ResPartner(models.Model):
 
             if import_complete:
                 # Resetear ID de último import y actualizar fecha - si falla, que aborte
-                shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', False)
-                shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_date_customer_import', fields.Datetime.now())
+                shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_import_customer_id', False,False)
+                shopify_instance_id.write_with_retry(shopify_instance_id, 'shopify_last_date_customer_import', fields.Datetime.now(),False)
                 _logger.info(f"WSSH Importación completada exitosamente en {time.time() - start_time:.1f}s")
 
         return all_customer_ids
