@@ -30,7 +30,7 @@ class ResPartner(models.Model):
         _logger.info(f"WSSH Context active_model: {self._context.get('active_model', 'No definido')}")
         
         # Configuración de timeouts y límites
-        tout_medio = 300  # Timeout medio para requests individuales
+        tout_medio = 30  # Timeout medio para requests individuales
         pagina_size = 60  # Tamaño de página para monitorización frecuente
         margen_seguridad = 100  # Margen de seguridad en segundos
         
