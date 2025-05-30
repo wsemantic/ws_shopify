@@ -149,7 +149,7 @@ class ShopifyInstance(models.Model):
         :param value: Valor a escribir en el campo
         """
         from psycopg2 import errors
-        max_retries = 3
+        max_retries = 10
         for attempt in range(max_retries):
             try:
                 if transaccional:

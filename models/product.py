@@ -489,7 +489,7 @@ class ProductTemplate(models.Model):
         loc_ids = ','.join(str(loc.shopify_location_id) for loc in locations) if locations else ''
         return loc_ids
         
-    def export_products_to_shopify(self, shopify_instance_ids, update=False, products=None):
+    def export_products_to_shopify(self, shopify_instance_ids, update=False, products=None, create_new=True):
         """
         Exporta productos a Shopify, filtrando por aquellos modificados desde la última exportación.
         """
@@ -644,7 +644,7 @@ class ProductTemplate(models.Model):
                     product_map = template_attribute_value.shopify_product_map_ids.filtered(
                         lambda m: m.shopify_instance_id == instance_id)
                     if product_map:
-                        if update or len(new_variants) > 0:
+                        if update or create_new and len(new_variants) > 0:
                             product_data["product"]["id"] = product_map.web_product_id
                             url = self.get_products_url(instance_id, f'products/{product_map.web_product_id}.json')
                             response = requests.put(url, headers=headers, data=json.dumps(product_data))
@@ -654,7 +654,7 @@ class ProductTemplate(models.Model):
                                 product_processed = True
                         else:
                             _logger.info(f"WSSH Ignorar, por no update, Shopify product {product_map.web_product_id}")                                                            
-                    else:                        
+                    elif create_new:                        
                         product_data["product"]["title"]=f"{product.name} - {template_attribute_value.name}"
                         product_data["product"]["status"]='draft'
                         if product.description:
