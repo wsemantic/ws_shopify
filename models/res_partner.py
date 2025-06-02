@@ -414,6 +414,8 @@ class ResPartner(models.Model):
         return partner
 
     def export_customers_to_shopify(self, shopify_instance_ids, update):
+        if not shopify_instance_ids:
+            shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
         partner_ids = self.sudo().browse(self._context.get("active_ids"))
         if not partner_ids:
             domain = []
@@ -421,9 +423,6 @@ class ResPartner(models.Model):
                 if instance_id.last_export_customer:
                     domain.append(('write_date', '>=', instance_id.last_export_customer))
             partner_ids = self.sudo().search(domain)
-
-        if not shopify_instance_ids:
-            shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
 
         for instance_id in shopify_instance_ids:
             url = self.get_customer_url(instance_id, endpoint='customers.json')

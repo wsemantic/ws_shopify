@@ -648,7 +648,7 @@ class ProductTemplate(models.Model):
                             product_data["product"]["id"] = product_map.web_product_id
                             url = self.get_products_url(instance_id, f'products/{product_map.web_product_id}.json')
                             response = requests.put(url, headers=headers, data=json.dumps(product_data))
-                            _logger.info(f"WSSH Updating Shopify product {product_map.web_product_id}")
+                            _logger.info(f"WSSH Updating Shopify product {product_map.web_product_id} {instance_id.name}")
                             if response.ok:
                                                                           
                                 product_processed = True
@@ -1233,8 +1233,8 @@ class ProductTemplate(models.Model):
                 })
                 
         if errors:
-            _logger.error(f"WSSH Error productCreate: {errors}")
-            raise UserError(f"WSSH Error exporting product {product.name}: {errors}")
+            _logger.error(f"WSSH Error productCreate: id {product.id} {errors}")
+            raise UserError(f"WSSH Error exporting product {product.name} id {product.id}: {errors}")
             
         if product_data and product_data.get("id"):
             shopify_product_gid = product_data["id"]
