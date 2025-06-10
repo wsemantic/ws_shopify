@@ -207,7 +207,9 @@ class SaleOrder(models.Model):
                 sku = line.get('sku') or ''
                 if sku:
                     product_by_sku = self.env['product.product'].sudo().search([
-                        ('default_code', '=', sku)
+                        '|',
+                        ('default_code', '=', sku),
+                        ('barcode', '=', sku),
                     ], limit=1)
                     if product_by_sku:
                         # Verificar si existe un mapeo para este producto en la instancia actual
