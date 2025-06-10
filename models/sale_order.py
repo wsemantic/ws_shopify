@@ -220,8 +220,12 @@ class SaleOrder(models.Model):
                             product = product_by_sku
                             product_name = line.get('title')+' '+sku
                         else:
-                            # Si no hay mapeo, seguir con el genérico pero loguear la situación
-                            _logger.info(f"WSSH Producto encontrado por SKU {sku} pero sin mapeo para variant_id {line.get('variant_id')} en instancia {shopify_instance_id.name}")
+                            self.env['shopify.variant.map'].create({
+                                'web_variant_id': line.get('variant_id'),
+                                'odoo_id': product_by_sku.id,
+                                'shopify_instance_id': shopify_instance_id.id,
+                            })
+    
                 if not product:
                     # Buscar/crear por nombre si no se encontró por SKU
                     product_by_name = self.env['product.product'].sudo().search([
