@@ -574,7 +574,7 @@ class ProductTemplate(models.Model):
                 product_processed = False                                                                                          
                 _logger.info(f"WSSH Exporta con split id {product.id} {product.name} ")  
                 for template_attribute_value in color_line.product_template_value_ids:
-                                                                                                                                                       
+                    _logger.info(f"WSSH Exporta color {template_attribute_value.name}")                                                                                          
                     response = None
                     # Filtrar variantes para este color
                     variants = product.product_variant_ids.filtered(
@@ -597,7 +597,7 @@ class ProductTemplate(models.Model):
                     color_fixed_line = None
                     if color_line:
                         # Creamos una "línea ficticia" solo con el valor actual de split
-                        color_fixed_line = color_line[0]
+                        color_fixed_line = template_attribute_value
                         option_attr_lines.append(color_fixed_line)
                     if size_line:
                         option_attr_lines.append(size_line)
@@ -654,7 +654,8 @@ class ProductTemplate(models.Model):
                                 product_processed = True
                         else:
                             _logger.info(f"WSSH Ignorar, por no update, Shopify product {product_map.web_product_id}")                                                            
-                    elif create_new:                        
+                    elif create_new:          
+                        _logger.info(f"WSSH creando {product.name} - {template_attribute_value.name}")                 
                         product_data["product"]["title"]=f"{product.name} - {template_attribute_value.name}"
                         product_data["product"]["status"]='draft'
                         if product.description:
@@ -663,17 +664,20 @@ class ProductTemplate(models.Model):
                         url = self.get_products_url(instance_id, 'products.json')
                         response = requests.post(url, headers=headers, data=json.dumps(product_data))
                                                                          
-
-                        if response.ok:
-                            product_processed = True
-                            shopify_product = response.json().get('product', {})
-                            if shopify_product:
+                        try:
+                            if response.ok:
+                                _logger.info(f"WSSH Response Ok")
+                                product_processed = True
+                                shopify_product = response.json().get('product', {})
+                                if shopify_product:
                                                                                                   
-                                self.env['shopify.product.map'].create({
-                                    'web_product_id': shopify_product.get('id'),
-                                    'odoo_id': template_attribute_value.id,
-                                    'shopify_instance_id': instance_id.id,
-                                })
+                                    self.env['shopify.product.map'].create({
+                                        'web_product_id': shopify_product.get('id'),
+                                        'odoo_id': template_attribute_value.id,
+                                        'shopify_instance_id': instance_id.id,
+                                    })
+                        except Exception as e:
+                            _logger.error("WSSH Excepción al crear variantes para color %s: %s", color_value.name, str(e))
 
                     if response and response.ok:
                         shopify_product = response.json().get('product', {})
@@ -683,6 +687,8 @@ class ProductTemplate(models.Model):
                     elif response:
                         _logger.error(f"WSSH Error exporting product: {response.text}")
                         raise UserError(f"WSSH Error exporting product {product.name} - {template_attribute_value.name}: {response.text}")
+                    else:
+                        _logger.info(f"WSSH No Response")                        
 
                                                                                                   
                 if product_processed:
