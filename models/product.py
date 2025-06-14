@@ -572,7 +572,7 @@ class ProductTemplate(models.Model):
                     continue
                 # Variable para rastrear si se procesó al menos una variante del producto
                 product_processed = False                                                                                          
-                _logger.info(f"WSSH Exporta con split id {product.id} {product.name")  
+                _logger.info(f"WSSH Exporta con split id {product.id} {product.name} ")  
                 for template_attribute_value in color_line.product_template_value_ids:
                                                                                                                                                        
                     response = None
