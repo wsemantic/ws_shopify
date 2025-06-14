@@ -662,33 +662,57 @@ class ProductTemplate(models.Model):
                             product_data["product"]["body_html"]=product.description
 
                         url = self.get_products_url(instance_id, 'products.json')
-                        response = requests.post(url, headers=headers, data=json.dumps(product_data))
-                                                                         
                         try:
+                            response = requests.post(url, headers=headers, data=json.dumps(product_data))
+                            _logger.info(f"WSSH POST request status: {response.status_code}")
+                            
                             if response.ok:
-                                _logger.info(f"WSSH Response Ok")
+                                _logger.info(f"WSSH Response Ok - Created new product")
                                 product_processed = True
                                 shopify_product = response.json().get('product', {})
                                 if shopify_product:
-                                                                                                  
+                                    # Crear el mapeo del producto
                                     self.env['shopify.product.map'].create({
                                         'web_product_id': shopify_product.get('id'),
                                         'odoo_id': template_attribute_value.id,
                                         'shopify_instance_id': instance_id.id,
                                     })
+                                    _logger.info(f"WSSH Created product map for Shopify product ID: {shopify_product.get('id')}")
+                                else:
+                                    _logger.warning(f"WSSH No product data in successful response")
+                            else:
+                                _logger.error(f"WSSH Error creating product: Status {response.status_code}, Response: {response.text}")
+                                raise UserError(f"WSSH Error creating product {product.name} - {template_attribute_value.name}: {response.text}")
+                                
+                        except requests.exceptions.RequestException as e:
+                            _logger.error(f"WSSH Network error creating product: {str(e)}")
+                            raise UserError(f"WSSH Network error creating product {product.name} - {template_attribute_value.name}: {str(e)}")
+                        except json.JSONDecodeError as e:
+                            _logger.error(f"WSSH JSON decode error in response: {str(e)}, Response text: {response.text if response else 'No response'}")
+                            raise UserError(f"WSSH Invalid JSON response from Shopify for product {product.name} - {template_attribute_value.name}")
                         except Exception as e:
-                            _logger.error("WSSH Excepción al crear variantes para color %s: %s", color_value.name, str(e))
+                            _logger.error(f"WSSH Unexpected error creating product: {str(e)}")
+                            raise UserError(f"WSSH Unexpected error creating product {product.name} - {template_attribute_value.name}: {str(e)}")
 
                     if response and response.ok:
-                        shopify_product = response.json().get('product', {})
-                        if shopify_product:
-                            shopify_variants = shopify_product.get('variants', [])
-                            self._update_variant_ids(variants, shopify_variants, instance_id)
-                    elif response:
-                        _logger.error(f"WSSH Error exporting product: {response.text}")
-                        raise UserError(f"WSSH Error exporting product {product.name} - {template_attribute_value.name}: {response.text}")
+                        try:
+                            shopify_product = response.json().get('product', {})
+                            if shopify_product:
+                                shopify_variants = shopify_product.get('variants', [])
+                                self._update_variant_ids(variants, shopify_variants, instance_id)
+                                _logger.info(f"WSSH Updated variant IDs for {len(shopify_variants)} variants")
+                            else:
+                                _logger.warning(f"WSSH No product data in response for {template_attribute_value.name}")
+                        except json.JSONDecodeError as e:
+                            _logger.error(f"WSSH Error parsing successful response JSON: {str(e)}")
+                        except Exception as e:
+                            _logger.error(f"WSSH Error processing successful response: {str(e)}")
+
+                    # Logging adicional para debugging
+                    if response:
+                        _logger.info(f"WSSH Final response status for {template_attribute_value.name}: {response.status_code}")
                     else:
-                        _logger.info(f"WSSH No Response")                        
+                        _logger.warning(f"WSSH No response object created for {template_attribute_value.name}")                      
 
                                                                                                   
                 if product_processed:
