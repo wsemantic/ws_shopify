@@ -593,15 +593,28 @@ class ProductTemplate(models.Model):
 
                     # CORREGIDO: Usar el método existente para obtener option_attr_lines correctamente
                     base_option_attr_lines = self._get_option_attr_lines(product, instance_id)
+                    _logger.info(f"WSSH DEBUG - base_option_attr_lines: {[(l.attribute_id.name, idx) for idx, l in enumerate(base_option_attr_lines, 1)]}")
                     
                     # Preparar datos de variantes usando las líneas de atributos correctas
-                    variant_data = [
-                        self._prepare_shopify_variant_data(
-                            variant, instance_id, base_option_attr_lines, color_value=template_attribute_value, is_update=update
-                        )
-                        for variant in variants
-                        if variant.default_code
-                    ]
+                    _logger.info(f"WSSH DEBUG - Variantes encontradas para {template_attribute_value.name}: {len(variants)}")
+                    _logger.info(f"WSSH DEBUG - Variantes con barcode: {[v.barcode for v in variants]}")
+                    _logger.info(f"WSSH DEBUG - Variantes con default_code: {[v.default_code for v in variants]}")
+                    
+                    variant_data = []
+                    for variant in variants:
+                        if variant.default_code:
+                            try:
+                                variant_result = self._prepare_shopify_variant_data(
+                                    variant, instance_id, base_option_attr_lines, color_value=template_attribute_value, is_update=update
+                                )
+                                variant_data.append(variant_result)
+                                _logger.info(f"WSSH DEBUG - Variante procesada OK: {variant.default_code} -> {variant_result}")
+                            except Exception as e:
+                                _logger.error(f"WSSH DEBUG - Error procesando variante {variant.default_code}: {str(e)}")
+                        else:
+                            _logger.info(f"WSSH DEBUG - Variante sin default_code: barcode={variant.barcode}")
+                    
+                    _logger.info(f"WSSH DEBUG - Variantes procesadas: {len(variant_data)}")
                                                    
                     # Ordenar variantes por talla si existe línea de talla
                     size_line = next((l for l in base_option_attr_lines if l.attribute_id.name.lower() in ('size', 'talla')), None)
@@ -660,6 +673,9 @@ class ProductTemplate(models.Model):
                             "variants": variant_data
                         }
                     }
+                    
+                    # DEBUG: Imprimir JSON completo que se envía a Shopify
+                    _logger.info(f"WSSH DEBUG - JSON enviado a Shopify: {json.dumps(product_data, indent=2)}")
                     
                     # Logging para debugging
                     _logger.info(f"WSSH DEBUG - Product options: {[opt['name'] + ':' + str(opt['position']) for opt in options_data]}")
@@ -1482,26 +1498,24 @@ class ProductTemplate(models.Model):
     def _get_option_attr_lines(self, product, instance_id):
         """
         Obtiene las líneas de atributos en el orden de las posiciones configuradas.
-        Retorna lista ordenada por posición que permite usar enumerate(option_attr_lines, 1)
+        Color y talla usan posiciones 1-2 configurables, otros atributos siempre posición 3.
         """
         attr_lines = list(product.attribute_line_ids)
         color_line = next((l for l in attr_lines if l.attribute_id.name.lower() == 'color'), None)
         size_line = next((l for l in attr_lines if l.attribute_id.name.lower() in ('size', 'talla')), None)
         other_lines = [l for l in attr_lines if l not in (color_line, size_line)]
         
-        # Mapear por posiciones configuradas
+        # Mapear por posiciones: color y talla en 1-2, otros en 3
         pos_map = {}
-        max_options = 3
         
         if color_line:
             pos_map[instance_id.color_option_position] = color_line
         if size_line:
             pos_map[instance_id.size_option_position] = size_line
-            
         if other_lines:
-            pos_map[3] = other_lines[0]  
+            pos_map[3] = other_lines[0]  # Solo el primer "otro" atributo en posición 3
         
-        # Retornar ordenado por posición (1, 2, 3...)
+        # Retornar ordenado por posición (1, 2, 3)
         return [pos_map[pos] for pos in sorted(pos_map.keys())]        
         
     def _shopify_update_first_variant_rest(self, instance_id, variant_id, sku, barcode, price):
