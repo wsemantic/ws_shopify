@@ -602,10 +602,15 @@ class ProductTemplate(models.Model):
                     variant_data = []
                     for variant in variants:
                         if variant.default_code:
-                            # Para productos nuevos (create_new), las variantes son siempre nuevas
-                            variant_is_update = update and product_map and product_map.web_product_id
+                            # CORREGIDO: Cada variante decide individualmente si es update o creación
+                            # basándose en si la variante específica ya existe en Shopify
+                            variant_map = variant.shopify_variant_map_ids.filtered(
+                                lambda m: m.shopify_instance_id == instance_id
+                            )
+                            variant_exists_in_shopify = bool(variant_map and variant_map.web_variant_id)
+                            
                             variant_result = self._prepare_shopify_variant_data(
-                                variant, instance_id, base_option_attr_lines, color_value=template_attribute_value, is_update=variant_is_update
+                                variant, instance_id, base_option_attr_lines, color_value=template_attribute_value, is_update=variant_exists_in_shopify
                             )
                             variant_data.append(variant_result)
                                                    
