@@ -604,12 +604,14 @@ class ProductTemplate(models.Model):
                     for variant in variants:
                         if variant.default_code:
                             try:
+                                # Para productos nuevos (create_new), las variantes son siempre nuevas
+                                variant_is_update = update and product_map and product_map.web_product_id
                                 variant_result = self._prepare_shopify_variant_data(
-                                    variant, instance_id, base_option_attr_lines, color_value=template_attribute_value, is_update=update
+                                    variant, instance_id, base_option_attr_lines, color_value=template_attribute_value, is_update=variant_is_update
                                 )
                                 variant_data.append(variant_result)
                                 _logger.info(f"WSSH DEBUG - Variante procesada OK: {variant.default_code} -> {variant_result}")
-                                _logger.info(f"WSSH DEBUG - Parámetros: is_update={update}, option_attr_lines={len(base_option_attr_lines) if base_option_attr_lines else 'None'}, color_value={template_attribute_value.name}")
+                                _logger.info(f"WSSH DEBUG - Parámetros: is_update={variant_is_update}, option_attr_lines={len(base_option_attr_lines) if base_option_attr_lines else 'None'}, color_value={template_attribute_value.name}")
                             except Exception as e:
                                 _logger.error(f"WSSH DEBUG - Error procesando variante {variant.default_code}: {str(e)}")
                         else:
