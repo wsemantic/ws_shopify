@@ -636,6 +636,37 @@ class ProductTemplate(models.Model):
                     else:
                         adjusted_options_data = None
 
+                    # Filtrar variantes duplicadas usando variant_mappings
+                    filtered_variant_data = []
+                    if adjusted_options_data and 'variant_mappings' in adjusted_options_data:
+                        variant_mappings = adjusted_options_data['variant_mappings']
+                        
+                        for variant in variant_data:
+                            if variant['sku'] in variant_mappings:
+                                # Esta variante tiene equivalente en Shopify - usar datos de Shopify
+                                mapping = variant_mappings[variant['sku']]
+                                adjusted_variant = variant.copy()
+                                adjusted_variant['sku'] = mapping['shopify_sku']
+                                adjusted_variant['barcode'] = mapping['shopify_barcode'] or ""
+                                adjusted_variant['id'] = str(mapping['shopify_id'])
+                                
+                                # Usar las opciones ajustadas manteniendo posiciones originales
+                                for position, value in mapping['adjusted_options'].items():
+                                    adjusted_variant[f'option{position}'] = value
+                                
+                                filtered_variant_data.append(adjusted_variant)
+                                adjusted_combo_list = [mapping['adjusted_options'].get(i, '') for i in sorted(mapping['adjusted_options'].keys())]
+                                _logger.info(f"WSSH Usando variante existente de Shopify: {mapping['shopify_sku']} con opciones {adjusted_combo_list}")
+                            else:
+                                # Variante nueva - mantener datos originales pero con opciones ajustadas
+                                filtered_variant_data.append(variant)
+                    else:
+                        # Sin mappings - usar variant_data original
+                        filtered_variant_data = variant_data
+
+                    # Usar filtered_variant_data en lugar de variant_data para el resto del procesamiento
+                    variant_data = filtered_variant_data
+
                     # CORREGIDO: Construir opciones usando directamente option_attr_lines (ya ordenado por posición)
                     options_data = []
                     
@@ -648,14 +679,8 @@ class ProductTemplate(models.Model):
                             if adjusted_options_data and 'color' in adjusted_options_data:
                                 color_value = adjusted_options_data['color']
                                 _logger.info(f"WSSH Usando color ajustado '{color_value}' en lugar de '{template_attribute_value.name}'")
-                                
-                                # CRÍTICO: Actualizar también el color en cada variante de variant_data
-                                for v in variant_data:
-                                    if f"option{idx}" in v:
-                                        original_color = v[f"option{idx}"]
-                                        v[f"option{idx}"] = color_value
-                                        _logger.info(f"WSSH Actualizado color en variante SKU=%s: '%s' -> '%s'", 
-                                                   v.get('sku', ''), original_color, color_value)
+                            
+                            # NO actualizar variant_data aquí - ya se ajustó en filtered_variant_data arriba
                             
                             options_data.append({
                                 "name": "Color",
@@ -675,13 +700,7 @@ class ProductTemplate(models.Model):
                                     _logger.error("WSSH ERROR: Variante con valor de talla vacío en producto '%s', color '%s', variante: %s", product.name, template_attribute_value.name, v)
                                     raise UserError(f"Error: Hay al menos una variante con valor de talla vacío para el producto '{product.name}' y color '{template_attribute_value.name}'. Corrige los datos antes de exportar.")
                                 
-                                # Usar valor ajustado si existe
-                                if adjusted_options_data and 'sizes' in adjusted_options_data and size_val in adjusted_options_data['sizes']:
-                                    adjusted_size = adjusted_options_data['sizes'][size_val]
-                                    _logger.info(f"WSSH Usando talla ajustada '{adjusted_size}' en lugar de '{size_val}'")
-                                    size_val = adjusted_size
-                                    v[f"option{idx}"] = adjusted_size  # Actualizar también en variant_data
-                                
+                                # NO ajustar aquí - ya se ajustó en filtered_variant_data arriba
                                 if size_val not in seen:
                                     size_values.append(size_val)
                                     seen.add(size_val)
@@ -1991,7 +2010,7 @@ class ProductTemplate(models.Model):
         :param option_attr_lines: Líneas de atributos de Odoo ordenadas por posición
         :param template_attribute_value: Valor del atributo de color actual
         :param variant_data: Datos de variantes que se van a enviar
-        :return: Dict con ajustes {'color': 'valor_shopify', 'sizes': {'odoo_size': 'shopify_size'}} o None
+        :return: Dict con ajustes {'color': 'valor_shopify', 'sizes': {'odoo_size': 'shopify_size'}, 'variant_mappings': {...}} o None
         """
         try:
             # Capturar producto existente de Shopify
@@ -2011,13 +2030,16 @@ class ProductTemplate(models.Model):
                 _logger.warning(f"WSSH Producto {shopify_product_id} no devolvió datos válidos")
                 return None
                 
-            # Extraer opciones existentes en Shopify
+            # Extraer opciones y variantes existentes en Shopify
             existing_options = shopify_product.get('options', [])
+            existing_variants = shopify_product.get('variants', [])
+            
             if not existing_options:
                 _logger.info(f"WSSH Producto {shopify_product_id} no tiene opciones definidas")
                 return None
                 
             adjustments = {}
+            variant_mappings = {}  # Para mapear variantes equivalentes
             
             # Procesar cada línea de atributo de Odoo
             for idx, attr_line in enumerate(option_attr_lines, 1):
@@ -2068,7 +2090,50 @@ class ProductTemplate(models.Model):
                     if size_adjustments:
                         adjustments['sizes'] = size_adjustments
             
-            return adjustments if adjustments else None
+            # Mapear variantes de Odoo con variantes existentes de Shopify
+            color_value = adjustments.get('color', template_attribute_value.name)
+            
+            for variant in variant_data:
+                # Construir combinación de opciones ajustada para esta variante
+                adjusted_options = {}  # posición -> valor
+                for idx, attr_line in enumerate(option_attr_lines, 1):
+                    attr_name = attr_line.attribute_id.name.lower()
+                    option_value = variant.get(f"option{idx}", "")
+                    
+                    if attr_name == 'color':
+                        adjusted_options[idx] = color_value
+                    elif attr_name in ('size', 'talla') and 'sizes' in adjustments and option_value in adjustments['sizes']:
+                        adjusted_options[idx] = adjustments['sizes'][option_value]
+                    else:
+                        adjusted_options[idx] = option_value
+                
+                # Buscar variante existente de Shopify con esta combinación ajustada
+                for existing_variant in existing_variants:
+                    existing_options = {}  # posición -> valor
+                    for i in range(1, 4):  # Shopify soporta máximo 3 opciones
+                        opt_val = existing_variant.get(f'option{i}')
+                        if opt_val:
+                            existing_options[i] = opt_val
+                    
+                    # Comparar diccionarios en lugar de arrays
+                    if existing_options == adjusted_options:
+                        # Encontrada variante equivalente en Shopify
+                        variant_mappings[variant['sku']] = {
+                            'shopify_id': existing_variant.get('id'),
+                            'shopify_sku': existing_variant.get('sku'),
+                            'shopify_barcode': existing_variant.get('barcode'),
+                            'adjusted_options': adjusted_options  # Guardar diccionario, no lista
+                        }
+                        adjusted_combo_list = [adjusted_options.get(i, '') for i in sorted(adjusted_options.keys())]
+                        _logger.info(f"WSSH Variante equivalente encontrada: SKU Odoo '{variant['sku']}' -> SKU Shopify '{existing_variant.get('sku')}' con opciones {adjusted_combo_list}")
+                        break
+            
+            if adjustments or variant_mappings:
+                result = adjustments.copy()
+                result['variant_mappings'] = variant_mappings
+                return result
+            
+            return None
             
         except Exception as e:
             _logger.error(f"WSSH Error capturando producto {shopify_product_id}: {str(e)}")
