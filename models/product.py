@@ -593,35 +593,21 @@ class ProductTemplate(models.Model):
 
                     # CORREGIDO: Usar el método existente para obtener option_attr_lines correctamente
                     base_option_attr_lines = self._get_option_attr_lines(product, instance_id)
-                    _logger.info(f"WSSH DEBUG - base_option_attr_lines: {[(l.attribute_id.name, idx) for idx, l in enumerate(base_option_attr_lines, 1)]}")
                     
                     # Obtener product_map antes del bucle de variantes
                     product_map = template_attribute_value.shopify_product_map_ids.filtered(
                         lambda m: m.shopify_instance_id == instance_id)
                     
                     # Preparar datos de variantes usando las líneas de atributos correctas
-                    _logger.info(f"WSSH DEBUG - Variantes encontradas para {template_attribute_value.name}: {len(variants)}")
-                    _logger.info(f"WSSH DEBUG - Variantes con barcode: {[v.barcode for v in variants]}")
-                    _logger.info(f"WSSH DEBUG - Variantes con default_code: {[v.default_code for v in variants]}")
-                    
                     variant_data = []
                     for variant in variants:
                         if variant.default_code:
-                            try:
-                                # Para productos nuevos (create_new), las variantes son siempre nuevas
-                                variant_is_update = update and product_map and product_map.web_product_id
-                                variant_result = self._prepare_shopify_variant_data(
-                                    variant, instance_id, base_option_attr_lines, color_value=template_attribute_value, is_update=variant_is_update
-                                )
-                                variant_data.append(variant_result)
-                                _logger.info(f"WSSH DEBUG - Variante procesada OK: {variant.default_code} -> {variant_result}")
-                                _logger.info(f"WSSH DEBUG - Parámetros: is_update={variant_is_update}, option_attr_lines={len(base_option_attr_lines) if base_option_attr_lines else 'None'}, color_value={template_attribute_value.name}")
-                            except Exception as e:
-                                _logger.error(f"WSSH DEBUG - Error procesando variante {variant.default_code}: {str(e)}")
-                        else:
-                            _logger.info(f"WSSH DEBUG - Variante sin default_code: barcode={variant.barcode}")
-                    
-                    _logger.info(f"WSSH DEBUG - Variantes procesadas: {len(variant_data)}")
+                            # Para productos nuevos (create_new), las variantes son siempre nuevas
+                            variant_is_update = update and product_map and product_map.web_product_id
+                            variant_result = self._prepare_shopify_variant_data(
+                                variant, instance_id, base_option_attr_lines, color_value=template_attribute_value, is_update=variant_is_update
+                            )
+                            variant_data.append(variant_result)
                                                    
                     # Ordenar variantes por talla si existe línea de talla
                     size_line = next((l for l in base_option_attr_lines if l.attribute_id.name.lower() in ('size', 'talla')), None)
@@ -680,9 +666,6 @@ class ProductTemplate(models.Model):
                             "variants": variant_data
                         }
                     }
-                    
-                    # DEBUG: Imprimir JSON completo que se envía a Shopify
-                    _logger.info(f"WSSH DEBUG - JSON enviado a Shopify: {json.dumps(product_data, indent=2)}")
                     
                     # Logging para debugging
                     _logger.info(f"WSSH DEBUG - Product options: {[opt['name'] + ':' + str(opt['position']) for opt in options_data]}")
