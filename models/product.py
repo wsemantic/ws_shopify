@@ -645,11 +645,19 @@ class ProductTemplate(models.Model):
                             size_values = []
                             seen = set()
                             for v in variant_data:
+                                _logger.info("WSSH Variante para options: %s", v)
                                 size_val = v.get(f"option{idx}", "")
+                                if not size_val:
+                                    _logger.error("WSSH ERROR: Variante con valor de talla vacío en producto '%s', color '%s', variante: %s", product.name, template_attribute_value.name, v)
+                                    raise UserError(f"Error: Hay al menos una variante con valor de talla vacío para el producto '{product.name}' y color '{template_attribute_value.name}'. Corrige los datos antes de exportar.")
+                                
                                 if size_val not in seen:
                                     size_values.append(size_val)
                                     seen.add(size_val)
-                            
+                            if not size_values:
+                                _logger.error("WSSH ERROR: No se detectaron valores válidos de talla para el producto %s y color %s", product.name, template_attribute_value.name)
+                                raise UserError(f"Error: No se detectaron valores válidos de talla para el producto '{product.name}' y color '{template_attribute_value.name}'.")
+                             
                             options_data.append({
                                 "name": "Size", 
                                 "position": idx,
