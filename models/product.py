@@ -591,27 +591,22 @@ class ProductTemplate(models.Model):
                         lambda v: not v.shopify_variant_map_ids.filtered(lambda m: m.shopify_instance_id == instance_id)
                     )
 
-                    # Construcción de option_attr_lines: primero color (fijo), luego tallas, mantiene equivalencia con el comportamiento original
-                    size_line = next((l for l in product.attribute_line_ids if l.attribute_id.name.lower() in ('size', 'talla')), None)
-                    option_attr_lines = []
-                    color_fixed_line = None
-                    if color_line:
-                        # Creamos una "línea ficticia" solo con el valor actual de split
-                        color_fixed_line = template_attribute_value
-                        option_attr_lines.append(color_fixed_line)
-                    if size_line:
-                        option_attr_lines.append(size_line)
-                    # --- FIN CONSTRUCCIÓN option_attr_lines ---
-
+                    # CORREGIDO: Usar el método existente para obtener option_attr_lines correctamente
+                    base_option_attr_lines = self._get_option_attr_lines(product, instance_id)
+                    
+                    # Preparar datos de variantes usando las líneas de atributos correctas
                     variant_data = [
                         self._prepare_shopify_variant_data(
-                            variant, instance_id, option_attr_lines, color_value=template_attribute_value, is_update=update
+                            variant, instance_id, base_option_attr_lines, color_value=template_attribute_value, is_update=update
                         )
                         for variant in variants
                         if variant.default_code
                     ]
                                                    
-                    variant_data.sort(key=lambda v: get_size_value(v.get(f"option{instance_id.size_option_position}", "")))
+                    # Ordenar variantes por talla si existe línea de talla
+                    size_line = next((l for l in base_option_attr_lines if l.attribute_id.name.lower() in ('size', 'talla')), None)
+                    if size_line:
+                        variant_data.sort(key=lambda v: get_size_value(v.get(f"option{instance_id.size_option_position}", "")))
                                                     
                     for position, variant in enumerate(variant_data, 1):
                         variant["position"] = position
@@ -622,46 +617,92 @@ class ProductTemplate(models.Model):
                                      product.name, template_attribute_value.name)
                         continue
 
+                    # CORREGIDO: Construir opciones usando directamente option_attr_lines (ya ordenado por posición)
+                    options_data = []
+                    
+                    for idx, attr_line in enumerate(base_option_attr_lines, 1):
+                        attr_name = attr_line.attribute_id.name.lower()
+                        
+                        if attr_name == 'color':
+                            options_data.append({
+                                "name": "Color",
+                                "position": idx,
+                                "values": [template_attribute_value.name]
+                            })
+                        elif attr_name in ('size', 'talla'):
+                            # Extraer valores únicos preservando el orden (variant_data ya está ordenado por talla)
+                            size_values = []
+                            seen = set()
+                            for v in variant_data:
+                                size_val = v.get(f"option{idx}", "")
+                                if size_val not in seen:
+                                    size_values.append(size_val)
+                                    seen.add(size_val)
+                            
+                            options_data.append({
+                                "name": "Size", 
+                                "position": idx,
+                                "values": size_values
+                            })
+                        else:
+                            # Otros atributos
+                            other_values = sorted(set(v.get(f"option{idx}", "") for v in variant_data))
+                            options_data.append({
+                                "name": attr_line.attribute_id.name,
+                                "position": idx,
+                                "values": other_values
+                            })
+
                     product_data = {
                         "product": {                            
-                            "options": [
-                                {
-                                    "name": "Color",
-                                    "position": instance_id.color_option_position,
-                                    "values": [template_attribute_value.name]
-                                },
-                                {
-                                    "name": "Size",
-                                    "position": instance_id.size_option_position,
-                                    "values": sorted(set(v.get(f"option{instance_id.size_option_position}", "") for v in variant_data), key=get_size_value)
-                                }
-                            ],
+                            "options": options_data,
                             "tags": ','.join(tag.name for tag in product.product_tag_ids),
                             "variants": variant_data
                         }
                     }
+                    
+                    # Logging para debugging
+                    _logger.info(f"WSSH DEBUG - Product options: {[opt['name'] + ':' + str(opt['position']) for opt in options_data]}")
+                    _logger.info(f"WSSH DEBUG - First variant options: {[(k, v) for k, v in variant_data[0].items() if k.startswith('option')] if variant_data else 'No variants'}")
 
                     product_map = template_attribute_value.shopify_product_map_ids.filtered(
                         lambda m: m.shopify_instance_id == instance_id)
+                    
                     if product_map:
                         if update or create_new and len(new_variants) > 0:
                             product_data["product"]["id"] = product_map.web_product_id
                             url = self.get_products_url(instance_id, f'products/{product_map.web_product_id}.json')
-                            response = requests.put(url, headers=headers, data=json.dumps(product_data))
                             _logger.info(f"WSSH Updating Shopify product {product_map.web_product_id} {instance_id.name}")
-                            if response.ok:
-                                                                          
-                                product_processed = True
+                            
+                            try:
+                                response = requests.put(url, headers=headers, data=json.dumps(product_data))
+                                _logger.info(f"WSSH PUT request status: {response.status_code}")
+                                
+                                if response.ok:
+                                    _logger.info(f"WSSH Response Ok - Updated product {product_map.web_product_id}")
+                                    product_processed = True
+                                else:
+                                    _logger.error(f"WSSH Error updating product {product_map.web_product_id}: Status {response.status_code}, Response: {response.text}")
+                                    raise UserError(f"WSSH Error updating product {product.name} - {template_attribute_value.name}: {response.text}")
+                                    
+                            except requests.exceptions.RequestException as e:
+                                _logger.error(f"WSSH Network error updating product {product_map.web_product_id}: {str(e)}")
+                                raise UserError(f"WSSH Network error updating product {product.name} - {template_attribute_value.name}: {str(e)}")
+                            except Exception as e:
+                                _logger.error(f"WSSH Unexpected error updating product {product_map.web_product_id}: {str(e)}")
+                                raise UserError(f"WSSH Unexpected error updating product {product.name} - {template_attribute_value.name}: {str(e)}")
                         else:
                             _logger.info(f"WSSH Ignorar, por no update, Shopify product {product_map.web_product_id}")                                                            
+                            
                     elif create_new:          
                         _logger.info(f"WSSH creando {product.name} - {template_attribute_value.name}")                 
-                        product_data["product"]["title"]=f"{product.name} - {template_attribute_value.name}"
-                        product_data["product"]["status"]='draft'
+                        product_data["product"]["title"] = f"{product.name} - {template_attribute_value.name}"
+                        product_data["product"]["status"] = 'draft'
                         if product.description:
-                            product_data["product"]["body_html"]=product.description
+                            product_data["product"]["body_html"] = product.description
 
                         url = self.get_products_url(instance_id, 'products.json')
+                        
                         try:
                             response = requests.post(url, headers=headers, data=json.dumps(product_data))
                             _logger.info(f"WSSH POST request status: {response.status_code}")
@@ -694,26 +735,31 @@ class ProductTemplate(models.Model):
                             _logger.error(f"WSSH Unexpected error creating product: {str(e)}")
                             raise UserError(f"WSSH Unexpected error creating product {product.name} - {template_attribute_value.name}: {str(e)}")
 
+                    # Procesar respuesta y actualizar variant IDs si todo fue exitoso
                     if response and response.ok:
                         try:
                             shopify_product = response.json().get('product', {})
                             if shopify_product:
                                 shopify_variants = shopify_product.get('variants', [])
                                 self._update_variant_ids(variants, shopify_variants, instance_id)
-                                _logger.info(f"WSSH Updated variant IDs for {len(shopify_variants)} variants")
+                                _logger.info(f"WSSH Updated variant IDs for {len(shopify_variants)} variants for color {template_attribute_value.name}")
                             else:
                                 _logger.warning(f"WSSH No product data in response for {template_attribute_value.name}")
                         except json.JSONDecodeError as e:
                             _logger.error(f"WSSH Error parsing successful response JSON: {str(e)}")
                         except Exception as e:
                             _logger.error(f"WSSH Error processing successful response: {str(e)}")
+                    elif response:
+                        # Este caso ya se manejó arriba con raise UserError
+                        pass
+                    else:
+                        _logger.warning(f"WSSH No response object for color {template_attribute_value.name} - this should not happen")
 
                     # Logging adicional para debugging
                     if response:
                         _logger.info(f"WSSH Final response status for {template_attribute_value.name}: {response.status_code}")
                     else:
-                        _logger.warning(f"WSSH No response object created for {template_attribute_value.name}")                      
-
+                        _logger.warning(f"WSSH No response object created for {template_attribute_value.name}")
                                                                                                   
                 if product_processed:
                     processed_count += 1
@@ -808,7 +854,7 @@ class ProductTemplate(models.Model):
                      
                 
     def _prepare_shopify_variant_data(self, variant, instance_id, option_attr_lines=None, color_value=None, is_update=False):
-        """Prepara los datos de la variante para enviar a Shopify"""
+        """Prepara los datos de la variante para enviar a Shopify en modo split por color"""
         variant_data = {
             "price": variant.product_tmpl_id.wholesale_price if not instance_id.prices_include_tax else variant.list_price,
             "sku": variant.default_code or "",
@@ -817,7 +863,6 @@ class ProductTemplate(models.Model):
         }
     
         if is_update:
-                                                                             
             variant_map = variant.shopify_variant_map_ids.filtered(
                 lambda m: m.shopify_instance_id == instance_id
             )
@@ -826,23 +871,21 @@ class ProductTemplate(models.Model):
         else:
             if option_attr_lines:
                 value_map = {v.attribute_id.id: v for v in variant.product_template_attribute_value_ids}
-                for idx, attr_line in enumerate(option_attr_lines, 1):
-                    # Si la opción es Color y hay un valor de color fijo (split), úsalo para todas las variantes del producto split
-                    if attr_line.attribute_id.name.lower() == 'color' and color_value is not None:
                 
-                                                                   
+                # SIMPLIFICADO: usar enumerate directo con posiciones configuradas
+                for idx, attr_line in enumerate(option_attr_lines, 1):
+                    attr_name = attr_line.attribute_id.name.lower()
+                    
+                    if attr_name == 'color':
+                        # En split, todas las variantes deben tener el color fijo especificado
                         variant_data[f"option{idx}"] = color_value.name
                     else:
-                        value = value_map.get(attr_line.attribute_id.id)
-                        variant_data[f"option{idx}"] = self._extract_name(value.product_attribute_value_id) if value else "Default"
-                 
-                                                 
-                                                  
-                                 
-                                  
-                 
+                        # Para tallas y otros atributos, usar el valor de la variante
+                        value_obj = value_map.get(attr_line.attribute_id.id)
+                        extracted_value = self._extract_name(value_obj.product_attribute_value_id) if value_obj else "Default"
+                        variant_data[f"option{idx}"] = extracted_value
             else:
-                                                   
+                # Fallback para productos sin option_attr_lines en modo split
                 for idx, attr_val in enumerate(variant.product_template_attribute_value_ids, 1):
                     if idx <= 3:
                         variant_data[f"option{idx}"] = self._extract_name(attr_val.product_attribute_value_id)
@@ -1438,28 +1481,28 @@ class ProductTemplate(models.Model):
         
     def _get_option_attr_lines(self, product, instance_id):
         """
-        Obtiene la lista de líneas de atributos (option_attr_lines) en el orden adecuado
-        para construir el input de opciones para GraphQL.
+        Obtiene las líneas de atributos en el orden de las posiciones configuradas.
+        Retorna lista ordenada por posición que permite usar enumerate(option_attr_lines, 1)
         """
         attr_lines = list(product.attribute_line_ids)
         color_line = next((l for l in attr_lines if l.attribute_id.name.lower() == 'color'), None)
         size_line = next((l for l in attr_lines if l.attribute_id.name.lower() in ('size', 'talla')), None)
         other_lines = [l for l in attr_lines if l not in (color_line, size_line)]
+        
+        # Mapear por posiciones configuradas
         pos_map = {}
         max_options = 3
+        
         if color_line:
-            pos_map[1] = color_line
+            pos_map[instance_id.color_option_position] = color_line
         if size_line:
-            pos_map[2] = size_line
-        other_pos = 3
-        for line in other_lines:
-            while other_pos in pos_map:
-                other_pos += 1
-            if other_pos > max_options:
-                break
-            pos_map[other_pos] = line
-            other_pos += 1
-        return [pos_map[pos] for pos in sorted(pos_map)]        
+            pos_map[instance_id.size_option_position] = size_line
+            
+        if other_lines:
+            pos_map[3] = other_lines[0]  
+        
+        # Retornar ordenado por posición (1, 2, 3...)
+        return [pos_map[pos] for pos in sorted(pos_map.keys())]        
         
     def _shopify_update_first_variant_rest(self, instance_id, variant_id, sku, barcode, price):
         """Actualiza la primera variante (SKU/barcode/price) por REST, ya que GraphQL no lo soporta."""
