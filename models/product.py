@@ -595,6 +595,10 @@ class ProductTemplate(models.Model):
                     base_option_attr_lines = self._get_option_attr_lines(product, instance_id)
                     _logger.info(f"WSSH DEBUG - base_option_attr_lines: {[(l.attribute_id.name, idx) for idx, l in enumerate(base_option_attr_lines, 1)]}")
                     
+                    # Obtener product_map antes del bucle de variantes
+                    product_map = template_attribute_value.shopify_product_map_ids.filtered(
+                        lambda m: m.shopify_instance_id == instance_id)
+                    
                     # Preparar datos de variantes usando las líneas de atributos correctas
                     _logger.info(f"WSSH DEBUG - Variantes encontradas para {template_attribute_value.name}: {len(variants)}")
                     _logger.info(f"WSSH DEBUG - Variantes con barcode: {[v.barcode for v in variants]}")
@@ -684,9 +688,6 @@ class ProductTemplate(models.Model):
                     _logger.info(f"WSSH DEBUG - Product options: {[opt['name'] + ':' + str(opt['position']) for opt in options_data]}")
                     _logger.info(f"WSSH DEBUG - First variant options: {[(k, v) for k, v in variant_data[0].items() if k.startswith('option')] if variant_data else 'No variants'}")
 
-                    product_map = template_attribute_value.shopify_product_map_ids.filtered(
-                        lambda m: m.shopify_instance_id == instance_id)
-                    
                     if product_map:
                         if update or create_new and len(new_variants) > 0:
                             product_data["product"]["id"] = product_map.web_product_id
