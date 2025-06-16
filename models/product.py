@@ -609,6 +609,7 @@ class ProductTemplate(models.Model):
                                 )
                                 variant_data.append(variant_result)
                                 _logger.info(f"WSSH DEBUG - Variante procesada OK: {variant.default_code} -> {variant_result}")
+                                _logger.info(f"WSSH DEBUG - Parámetros: is_update={update}, option_attr_lines={len(base_option_attr_lines) if base_option_attr_lines else 'None'}, color_value={template_attribute_value.name}")
                             except Exception as e:
                                 _logger.error(f"WSSH DEBUG - Error procesando variante {variant.default_code}: {str(e)}")
                         else:
