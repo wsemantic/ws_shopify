@@ -610,7 +610,7 @@ class ProductTemplate(models.Model):
                             variant_exists_in_shopify = bool(variant_map and variant_map.web_variant_id)
                             
                             variant_result = self._prepare_shopify_variant_data(
-                                variant, instance_id, base_option_attr_lines, color_value=template_attribute_value, is_update=variant_exists_in_shopify
+                                variant, instance_id, is_update=variant_exists_in_shopify
                             )
                             variant_data.append(variant_result)
                                                    
@@ -875,44 +875,53 @@ class ProductTemplate(models.Model):
                 _logger.warning(f"WSSH Update var: No matching Shopify variant found for Odoo variant with SKU %s", sku)   
                      
                 
-    def _prepare_shopify_variant_data(self, variant, instance_id, option_attr_lines=None, color_value=None, is_update=False):
-        """Prepara los datos de la variante para enviar a Shopify en modo split por color"""
-        variant_data = {
-            "price": variant.product_tmpl_id.wholesale_price if not instance_id.prices_include_tax else variant.list_price,
-            "sku": variant.default_code or "",
-            "barcode": variant.barcode or "",
-            "inventory_management": "shopify"
+    def _prepare_shopify_variant_data(self, variant, instance_id, is_update=False):
+        """
+        Prepara los datos de una variante para Shopify, usando las posiciones configuradas para color y talla.
+        """
+        # Posición de las opciones según configuración de la instancia
+        color_pos = instance_id.color_option_position if hasattr(instance_id, 'color_option_position') else 1
+        size_pos = instance_id.size_option_position if hasattr(instance_id, 'size_option_position') else 2
+
+        # Extraer valores reales de color y talla desde la variante
+        color_val = None
+        size_val = None
+        for val in variant.product_template_attribute_value_ids:
+            attr_name = val.attribute_id.name.lower()
+            if attr_name == 'color':
+                color_val = val.name
+            elif attr_name in ('size', 'talla'):
+                size_val = val.name
+
+        # Comprobación de errores: si falta algún valor requerido, lanzar excepción
+        if not color_val:
+            _logger.error("WSSH ERROR: Variante SKU %s no tiene color asignado.", variant.default_code)
+            raise UserError(f"Error: Variante SKU {variant.default_code} no tiene color asignado.")
+        if not size_val:
+            _logger.error("WSSH ERROR: Variante SKU %s no tiene talla asignada.", variant.default_code)
+            raise UserError(f"Error: Variante SKU {variant.default_code} no tiene talla asignada.")
+
+        # Construir el diccionario resultado para Shopify
+        result = {
+            'price': getattr(variant, 'lst_price', variant.product_tmpl_id.lst_price),
+            'sku': variant.default_code,
+            'barcode': variant.barcode,
+            'inventory_management': 'shopify',
         }
-    
+
+        result[f'option{color_pos}'] = color_val
+        result[f'option{size_pos}'] = size_val
+
+        # Si es update y el variant ya existe, incluye su id
         if is_update:
             variant_map = variant.shopify_variant_map_ids.filtered(
                 lambda m: m.shopify_instance_id == instance_id
             )
             if variant_map and variant_map.web_variant_id:
-                variant_data["id"] = variant_map.web_variant_id
-        else:
-            if option_attr_lines:
-                value_map = {v.attribute_id.id: v for v in variant.product_template_attribute_value_ids}
-                
-                # SIMPLIFICADO: usar enumerate directo con posiciones configuradas
-                for idx, attr_line in enumerate(option_attr_lines, 1):
-                    attr_name = attr_line.attribute_id.name.lower()
-                    
-                    if attr_name == 'color':
-                        # En split, todas las variantes deben tener el color fijo especificado
-                        variant_data[f"option{idx}"] = color_value.name
-                    else:
-                        # Para tallas y otros atributos, usar el valor de la variante
-                        value_obj = value_map.get(attr_line.attribute_id.id)
-                        extracted_value = self._extract_name(value_obj.product_attribute_value_id) if value_obj else "Default"
-                        variant_data[f"option{idx}"] = extracted_value
-            else:
-                # Fallback para productos sin option_attr_lines en modo split
-                for idx, attr_val in enumerate(variant.product_template_attribute_value_ids, 1):
-                    if idx <= 3:
-                        variant_data[f"option{idx}"] = self._extract_name(attr_val.product_attribute_value_id)
-    
-        return variant_data
+                result['id'] = str(variant_map.web_variant_id)
+
+        return result
+
         
     def _extract_name(self, attr_val):
         """
