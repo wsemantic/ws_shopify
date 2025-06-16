@@ -903,7 +903,7 @@ class ProductTemplate(models.Model):
 
         # Construir el diccionario resultado para Shopify
         result = {
-            'price': getattr(variant, 'lst_price', variant.product_tmpl_id.lst_price),
+            "price": variant.product_tmpl_id.wholesale_price if not instance_id.prices_include_tax else variant.list_price,
             'sku': variant.default_code,
             'barcode': variant.barcode,
             'inventory_management': 'shopify',
