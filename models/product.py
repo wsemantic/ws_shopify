@@ -648,6 +648,14 @@ class ProductTemplate(models.Model):
                             if adjusted_options_data and 'color' in adjusted_options_data:
                                 color_value = adjusted_options_data['color']
                                 _logger.info(f"WSSH Usando color ajustado '{color_value}' en lugar de '{template_attribute_value.name}'")
+                                
+                                # CRÍTICO: Actualizar también el color en cada variante de variant_data
+                                for v in variant_data:
+                                    if f"option{idx}" in v:
+                                        original_color = v[f"option{idx}"]
+                                        v[f"option{idx}"] = color_value
+                                        _logger.info(f"WSSH Actualizado color en variante SKU=%s: '%s' -> '%s'", 
+                                                   v.get('sku', ''), original_color, color_value)
                             
                             options_data.append({
                                 "name": "Color",
