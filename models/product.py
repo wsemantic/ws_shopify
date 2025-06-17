@@ -812,7 +812,7 @@ class ProductTemplate(models.Model):
                             url = self.get_products_url(instance_id, f'products/{product_map.web_product_id}.json')
                             _logger.info(f"WSSH Updating Shopify product {product_map.web_product_id} {instance_id.name}")
                             # --- LOG DEL PAYLOAD ---
-                            #_logger.info("WSSH PAYLOAD FINAL ENVIADO A SHOPIFY:\n%s", json.dumps(product_data, indent=2, ensure_ascii=False))
+                            _logger.info("WSSH PAYLOAD FINAL ENVIADO A SHOPIFY:\n%s", json.dumps(product_data, indent=2, ensure_ascii=False))
                             
                             try:
                                 response = requests.put(url, headers=headers, data=json.dumps(product_data))
