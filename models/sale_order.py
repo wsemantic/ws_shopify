@@ -203,6 +203,17 @@ class SaleOrder(models.Model):
                 ('shopify_variant_map_ids.shopify_instance_id', '=', shopify_instance_id.id)
             ], limit=1)
             if not product:
+                # Log detallado
+                _logger.error(
+                    f"No se encontró producto para el variant_id '{line.get('variant_id')}' "
+                    f"y Shopify Instance '{shopify_instance_id.id}' (Pedido {order_name if 'order_name' in locals() else 'desconocido'}). "
+                    f"Datos de línea: {line}"
+                )
+                raise UserError(
+                    f"No se pudo encontrar producto Odoo para la variante Shopify con ID '{line.get('variant_id')}' "
+                    f"y Shopify Instance '{shopify_instance_id.id}'. "
+                    "Revise el mapping en 'shopify.variant.map' antes de importar este pedido."
+                )
                 # Intentar buscar por SKU (default_code) antes de usar el genérico
                 sku = line.get('sku') or ''
                 if sku:
