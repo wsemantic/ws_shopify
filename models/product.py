@@ -743,7 +743,7 @@ class ProductTemplate(models.Model):
                             _logger.info(f"WSSH Updating Shopify product {product_map.web_product_id} {instance_id.name}")
                             # --- LOG DEL PAYLOAD ---
                             _logger.info("WSSH PAYLOAD FINAL ENVIADO A SHOPIFY:\n%s", json.dumps(product_data, indent=2, ensure_ascii=False))
-                            
+                            raise UserError(f"Anular")
                             try:
                                 response = requests.put(url, headers=headers, data=json.dumps(product_data))
                                 _logger.info(f"WSSH PUT request status: {response.status_code}")
