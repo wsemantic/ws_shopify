@@ -781,7 +781,7 @@ class ProductTemplate(models.Model):
                                 raise UserError(f"Error: No se detectaron valores válidos de talla para el producto '{product.name}' y color '{template_attribute_value.name}'.")
                              
                             options_data.append({
-                                "name": "Size", 
+                                "name": "Talla", 
                                 "position": idx,
                                 "values": size_values
                             })
