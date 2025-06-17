@@ -636,49 +636,98 @@ class ProductTemplate(models.Model):
                     else:
                         adjusted_options_data = None
 
-                    # Filtrar variantes que ya existen en Shopify y aplicar ajustes
+                    # Aplicar ajustes y manejar variantes existentes vs nuevas
                     filtered_variant_data = []
                     if adjusted_options_data:
                         existing_variants = adjusted_options_data.get('existing_variants', [])
-                        existing_skus = {v.get('sku') for v in existing_variants if v.get('sku')}
-                        existing_barcodes = {v.get('barcode') for v in existing_variants if v.get('barcode')}
                         
-                        _logger.info(f"WSSH SKUs existentes en Shopify: {existing_skus}")
-                        _logger.info(f"WSSH Barcodes existentes en Shopify: {existing_barcodes}")
+                        # Crear mapas para búsqueda rápida
+                        existing_by_sku = {v.get('sku'): v for v in existing_variants if v.get('sku')}
+                        existing_by_barcode = {v.get('barcode'): v for v in existing_variants if v.get('barcode')}
+                        
+                        # Crear mapa de combinaciones de opciones existentes para detectar duplicados
+                        existing_combinations = set()
+                        for ev in existing_variants:
+                            combo = []
+                            for i in range(1, 4):
+                                opt_val = ev.get(f'option{i}')
+                                if opt_val:
+                                    combo.append(opt_val)
+                                else:
+                                    break
+                            if combo:
+                                existing_combinations.add(tuple(combo))
+                        
+                        _logger.info(f"WSSH Combinaciones existentes en Shopify: {existing_combinations}")
                         
                         for variant in variant_data:
-                            # Verificar si esta variante ya existe en Shopify
-                            variant_exists = (variant.get('sku') in existing_skus or 
-                                            variant.get('barcode') in existing_barcodes)
+                            # Verificar si esta variante ya existe exactamente en Shopify
+                            existing_variant = None
+                            if variant.get('sku') in existing_by_sku:
+                                existing_variant = existing_by_sku[variant.get('sku')]
+                            elif variant.get('barcode') and variant.get('barcode') in existing_by_barcode:
+                                existing_variant = existing_by_barcode[variant.get('barcode')]
                             
-                            if variant_exists:
-                                _logger.info(f"WSSH Variante ya existe en Shopify, se omite: SKU={variant.get('sku')}, Barcode={variant.get('barcode')}")
-                                continue
+                            if existing_variant:
+                                # Variante existe - incluir con ID para actualizar
+                                adjusted_variant = variant.copy()
+                                adjusted_variant['id'] = str(existing_variant.get('id'))
                                 
-                            # Aplicar ajustes de color y talla a variante nueva
-                            adjusted_variant = variant.copy()
-                            
-                            # Ajustar color si hay ajuste
-                            if 'color' in adjusted_options_data:
-                                for idx, attr_line in enumerate(base_option_attr_lines, 1):
-                                    if attr_line.attribute_id.name.lower() == 'color':
-                                        original_color = adjusted_variant.get(f"option{idx}", "")
-                                        adjusted_variant[f"option{idx}"] = adjusted_options_data['color']
-                                        _logger.info(f"WSSH Ajustado color en variante SKU={adjusted_variant.get('sku')}: '{original_color}' -> '{adjusted_options_data['color']}'")
+                                # Aplicar ajustes de color si hay
+                                if 'color' in adjusted_options_data:
+                                    for idx, attr_line in enumerate(base_option_attr_lines, 1):
+                                        if attr_line.attribute_id.name.lower() == 'color':
+                                            adjusted_variant[f"option{idx}"] = adjusted_options_data['color']
+                                            break
+                                
+                                # Aplicar ajustes de talla si hay
+                                if 'sizes' in adjusted_options_data:
+                                    for idx, attr_line in enumerate(base_option_attr_lines, 1):
+                                        if attr_line.attribute_id.name.lower() in ('size', 'talla'):
+                                            original_size = adjusted_variant.get(f"option{idx}", "")
+                                            if original_size in adjusted_options_data['sizes']:
+                                                adjusted_variant[f"option{idx}"] = adjusted_options_data['sizes'][original_size]
+                                            break
+                                
+                                filtered_variant_data.append(adjusted_variant)
+                                _logger.info(f"WSSH Variante existente incluida para update: SKU={variant.get('sku')}")
+                            else:
+                                # Variante nueva - verificar si causaría duplicado después de ajustes
+                                test_variant = variant.copy()
+                                
+                                # Aplicar ajustes temporalmente para verificar duplicado
+                                if 'color' in adjusted_options_data:
+                                    for idx, attr_line in enumerate(base_option_attr_lines, 1):
+                                        if attr_line.attribute_id.name.lower() == 'color':
+                                            test_variant[f"option{idx}"] = adjusted_options_data['color']
+                                            break
+                                
+                                if 'sizes' in adjusted_options_data:
+                                    for idx, attr_line in enumerate(base_option_attr_lines, 1):
+                                        if attr_line.attribute_id.name.lower() in ('size', 'talla'):
+                                            original_size = test_variant.get(f"option{idx}", "")
+                                            if original_size in adjusted_options_data['sizes']:
+                                                test_variant[f"option{idx}"] = adjusted_options_data['sizes'][original_size]
+                                            break
+                                
+                                # Construir combinación ajustada
+                                adjusted_combo = []
+                                for idx in range(1, 4):
+                                    opt_val = test_variant.get(f'option{idx}')
+                                    if opt_val:
+                                        adjusted_combo.append(opt_val)
+                                    else:
                                         break
-                            
-                            # Ajustar tallas si hay ajustes
-                            if 'sizes' in adjusted_options_data:
-                                for idx, attr_line in enumerate(base_option_attr_lines, 1):
-                                    if attr_line.attribute_id.name.lower() in ('size', 'talla'):
-                                        original_size = adjusted_variant.get(f"option{idx}", "")
-                                        if original_size in adjusted_options_data['sizes']:
-                                            adjusted_size = adjusted_options_data['sizes'][original_size]
-                                            adjusted_variant[f"option{idx}"] = adjusted_size
-                                            _logger.info(f"WSSH Ajustado talla en variante SKU={adjusted_variant.get('sku')}: '{original_size}' -> '{adjusted_size}'")
-                                        break
-                            
-                            filtered_variant_data.append(adjusted_variant)
+                                
+                                adjusted_combo_tuple = tuple(adjusted_combo)
+                                
+                                if adjusted_combo_tuple in existing_combinations:
+                                    # Esta combinación ajustada ya existe - omitir para evitar duplicado
+                                    _logger.info(f"WSSH Variante omitida (duplicado después de ajuste): SKU={variant.get('sku')}, combo ajustada={adjusted_combo}")
+                                else:
+                                    # Variante nueva que no causa duplicado - incluir
+                                    filtered_variant_data.append(test_variant)
+                                    _logger.info(f"WSSH Variante nueva incluida: SKU={variant.get('sku')}, combo={adjusted_combo}")
                     else:
                         # Sin ajustes - usar variant_data original
                         filtered_variant_data = variant_data
