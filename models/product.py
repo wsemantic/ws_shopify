@@ -633,9 +633,13 @@ class ProductTemplate(models.Model):
                         variant_data.append(variant_result)
 
                 # Ordenar variantes por talla si existe línea de talla
-                size_line = next((l for l in base_option_attr_lines if l.attribute_id.name.lower() in ('size', 'talla')), None)
-                if size_line:
-                    variant_data.sort(key=lambda v: get_size_value(v.get(f"option{instance_id.size_option_position}", "")))
+                size_index = instance_id.size_option_position - 1
+                if len(base_option_attr_lines) > size_index:
+                    variant_data.sort(
+                        key=lambda v: get_size_value(
+                            v.get(f"option{instance_id.size_option_position}", "")
+                        )
+                    )
 
                 for position, variant in enumerate(variant_data, 1):
                     variant["position"] = position
