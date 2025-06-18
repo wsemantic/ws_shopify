@@ -725,36 +725,61 @@ class ProductTemplate(models.Model):
                         # --- LOG DEL PAYLOAD ---
                         _logger.info("WSSH PAYLOAD FINAL ENVIADO A SHOPIFY:\n%s", json.dumps(product_data, indent=2, ensure_ascii=False))
 
+                        
                         try:
-                            response = requests.put(url, headers=headers, data=json.dumps(product_data))
-                            _logger.info(f"WSSH PUT request status: {response.status_code}")
+                            retries = 0
+                            while True:
+                                response = requests.put(url, headers=headers, data=json.dumps(product_data))
+                                _logger.info(f"WSSH PUT request status: {response.status_code}")
 
-                            if response.ok:
-                                _logger.info(f"WSSH Response Ok - Updated product {product_map.web_product_id}")
-                                product_processed = True
-                            else:
-                                if response.status_code == 422:
+                                if response.ok:
+                                    _logger.info(f"WSSH Response Ok - Updated product {product_map.web_product_id}")
+                                    product_processed = True
+                                    break
+
+                                if response.status_code == 422 and retries == 0:
                                     try:
                                         err_data = response.json()
                                         variant_errors = err_data.get('errors', {}).get('variants', [])
+                                        missing_ids = []
+                                        removed_variants = self.env['product.product']
+
                                         for msg in variant_errors:
                                             m = re.search(r"\[([0-9 ,]+)\]", msg)
                                             if m:
                                                 ids = [v.strip() for v in m.group(1).split(',') if v.strip()]
+                                                missing_ids.extend(ids)
                                                 for vid in ids:
                                                     maps = self.env['shopify.variant.map'].sudo().search([
                                                         ('web_variant_id', '=', vid),
                                                         ('shopify_instance_id', '=', instance_id.id),
                                                     ])
                                                     if maps:
+                                                        removed_variants |= maps.mapped('odoo_id')
                                                         maps.unlink()
-                                                        _logger.warning(f"WSSH Removed mapping for deleted variant {vid} on instance {instance_id.name}")
+                                                        _logger.warning(
+                                                            f"WSSH Removed mapping for deleted variant {vid} on instance {instance_id.name}")
+                                        if missing_ids:
+                                            # Remove missing variants from payload and local lists
+                                            variant_data[:] = [
+                                                v for v in variant_data if str(v.get('id')) not in missing_ids
+                                            ]
+                                            variants -= removed_variants
+                                            new_variants -= removed_variants
+                                            product_data['product']['variants'] = variant_data
+                                            retries += 1
+                                            _logger.info(
+                                                f"WSSH Retrying update without variants {missing_ids}")
+                                            continue
                                     except Exception as parse_e:
                                         _logger.error(f"WSSH Error processing 422 response: {str(parse_e)}")
-                                        
-                                _logger.error(f"WSSH Error updating product {product_map.web_product_id}: Status {response.status_code}, Response: {response.text}")
+
+                                _logger.error(
+                                    f"WSSH Error updating product {product_map.web_product_id}: Status {response.status_code}, Response: {response.text}")
                                 cname = color_value.name if color_value else 'N/A'
-                                raise UserError(f"WSSH Error updating product {product.name} - {cname}: {response.text}")
+                                raise UserError(
+                                    f"WSSH Error updating product {product.name} - {cname}: {response.text}")
+                            # end while
 
                         except requests.exceptions.RequestException as e:
                             _logger.error(f"WSSH Network error updating product {product_map.web_product_id}: {str(e)}")
