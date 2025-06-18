@@ -203,21 +203,7 @@ class SaleOrder(models.Model):
                 ('shopify_variant_map_ids.shopify_instance_id', '=', shopify_instance_id.id)
             ], limit=1)
             if not product:
-                # Log detallado
                 sku = line.get('sku') or ''
-                
-                pattern = r'^[0-9AEIOU.#]{10,}$'
-                if sku and re.match(pattern, sku):    
-                    _logger.error(
-                        f"WS No se encontró producto para el variant_id '{line.get('variant_id')}' "
-                        f"y Shopify Instance '{shopify_instance_id.id}' (Pedido {order.get('name')}). "
-                        f"Datos de línea: {line}"
-                    )
-                    raise UserError(
-                        f"No se pudo encontrar producto Odoo para la variante Shopify con ID '{line.get('variant_id')}' "
-                        f"y Shopify Instance '{shopify_instance_id.id}'. "
-                        "Revise el mapping en 'shopify.variant.map' antes de importar este pedido."
-                    )
                 # Intentar buscar por SKU (default_code) antes de usar el genérico
                 if sku:
                     product_by_sku = self.env['product.product'].sudo().search([
@@ -228,9 +214,12 @@ class SaleOrder(models.Model):
                     if product_by_sku:
                         # Verificar si existe un mapeo para este producto en la instancia actual
                         product_map = product_by_sku.shopify_variant_map_ids.filtered(
-                            lambda m: m.shopify_instance_id == shopify_instance_id 
+                            lambda m: m.shopify_instance_id == shopify_instance_id
                         )
                         if product_map:
+                            # Si el mapeo existe pero el variant_id ha cambiado, actualizarlo
+                            if product_map.web_variant_id != str(line.get('variant_id')):
+                                product_map.write({'web_variant_id': line.get('variant_id')})
                             product = product_by_sku
                             product_name = line.get('title')+' '+sku
                         else:
