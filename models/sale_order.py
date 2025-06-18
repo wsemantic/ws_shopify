@@ -206,7 +206,7 @@ class SaleOrder(models.Model):
                 # Log detallado
                 _logger.error(
                     f"No se encontró producto para el variant_id '{line.get('variant_id')}' "
-                    f"y Shopify Instance '{shopify_instance_id.id}' (Pedido {order_name if 'order_name' in locals() else 'desconocido'}). "
+                    f"y Shopify Instance '{shopify_instance_id.id}' (Pedido {order.get('name')}). "
                     f"Datos de línea: {line}"
                 )
                 raise UserError(
