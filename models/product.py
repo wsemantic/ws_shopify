@@ -523,6 +523,7 @@ class ProductTemplate(models.Model):
             pos_map[3] = other_lines[0]
 
         return pos_map
+
         
     def export_products_to_shopify(self, shopify_instance_ids, update=False, products=None, create_new=True):
         """
@@ -675,6 +676,7 @@ class ProductTemplate(models.Model):
                         for v in variant_data:
                             _logger.info("WSSH Variante para options: %s", v)
                             size_val = v.get(f"option{position}", "")
+
                             _logger.info("WSSH checking talla para variante SKU=%s => '%s'", v.get('sku', ''), size_val)
                             if not size_val:
                                 _logger.error("WSSH ERROR: Variante con valor de talla vacío en producto '%s', color '%s', variante: %s", product.name, cname, v)
