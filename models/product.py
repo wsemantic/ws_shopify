@@ -725,7 +725,7 @@ class ProductTemplate(models.Model):
                         # --- LOG DEL PAYLOAD ---
                         _logger.info("WSSH PAYLOAD FINAL ENVIADO A SHOPIFY:\n%s", json.dumps(product_data, indent=2, ensure_ascii=False))
 
-
+                        
                         try:
                             retries = 0
                             while True:
@@ -743,6 +743,7 @@ class ProductTemplate(models.Model):
                                         variant_errors = err_data.get('errors', {}).get('variants', [])
                                         missing_ids = []
                                         removed_variants = self.env['product.product']
+
                                         for msg in variant_errors:
                                             m = re.search(r"\[([0-9 ,]+)\]", msg)
                                             if m:
