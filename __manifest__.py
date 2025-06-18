@@ -5,9 +5,10 @@
     'category': 'Services',
     'author': 'Semantic Web Software',
     'website': 'wsemantic.com',
-    'summary': 'This module is used to connect odoo with shopify',
+    'summary': 'Odoo connector for multiple Shopify stores',
     'description': """
-       Odoo-shopify connector: This module is used to connect odoo with shopify.
+       Odoo-Shopify connector supporting multiple shops and unified REST
+       product export without GraphQL.
     """,
     'depends': ['base', 'sale', 'sale_management', 'product', 'stock', 'delivery'],
 
