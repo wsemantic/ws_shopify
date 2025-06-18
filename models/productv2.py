@@ -742,12 +742,11 @@ class ProductTemplate(models.Model):
                     
                     _logger.info(f"WSSH Variantes finales a enviar: {len(variant_data)} de {len(variants)} originales")
                     
-                    # Preparar datos de variantes usando las líneas de atributos correctas
+                    # Aplicar reglas de formato a los datos de variantes
                     variant_data = []
                     for variant in variants:
                         if variant.default_code:
-                            # CORREGIDO: Cada variante decide individualmente si es update o creación
-                            # basándose en si la variante específica ya existe en Shopify
+                            # Cada variante decide individualmente si es update o creación
                             variant_map = variant.shopify_variant_map_ids.filtered(
                                 lambda m: m.shopify_instance_id == instance_id
                             )
@@ -757,23 +756,13 @@ class ProductTemplate(models.Model):
                                 variant, instance_id, is_update=variant_exists_in_shopify
                             )
                             
-                            # Aplicar ajustes de valores capturados
-                            if adjusted_values:
-                                # Aplicar ajuste de color
-                                if 'color' in adjusted_values:
-                                    for idx, attr_line in enumerate(base_option_attr_lines, 1):
-                                        if attr_line.attribute_id.name.lower() in ('color', 'colour'):
-                                            variant_result[f"option{idx}"] = adjusted_values['color']
-                                            break
-                                
-                                # Aplicar ajustes de tallas
-                                if 'sizes' in adjusted_values:
-                                    for idx, attr_line in enumerate(base_option_attr_lines, 1):
-                                        if attr_line.attribute_id.name.lower() in ('size', 'talla', 'taille', 'größe'):
-                                            original_size = variant_result.get(f"option{idx}", "")
-                                            if original_size in adjusted_values['sizes']:
-                                                variant_result[f"option{idx}"] = adjusted_values['sizes'][original_size]
-                                            break
+                            # Aplicar regla de formato de color: Primera mayúscula, resto minúsculas
+                            for idx, attr_line in enumerate(base_option_attr_lines, 1):
+                                if attr_line.attribute_id.name.lower() in ('color', 'colour'):
+                                    original_color = variant_result.get(f"option{idx}", "")
+                                    formatted_color = original_color.capitalize() if original_color else ""
+                                    variant_result[f"option{idx}"] = formatted_color
+                                    break
                             
                             variant_data.append(variant_result)
                                                    
@@ -1073,10 +1062,15 @@ class ProductTemplate(models.Model):
         # Construir el diccionario resultado para Shopify
         result = {
             "price": variant.product_tmpl_id.wholesale_price if not instance_id.prices_include_tax else variant.list_price,
-            'sku': variant.default_code,
-            'barcode': variant.barcode,
-            'inventory_management': 'shopify',
         }
+
+        # Para updates: solo precio y opciones, NO sku ni barcode
+        if not is_update:
+            result.update({
+                'sku': variant.default_code,
+                'barcode': variant.barcode,
+                'inventory_management': 'shopify',
+            })
 
         result[f'option{color_pos}'] = color_val
         result[f'option{size_pos}'] = size_val
