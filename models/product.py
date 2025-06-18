@@ -508,7 +508,7 @@ class ProductTemplate(models.Model):
             yield product, None
 
     def _get_option_attr_lines(self, product, instance_id):
-        """Return attribute lines ordered by the instance option positions."""
+        """Return a mapping of Shopify option positions to attribute lines."""
         attr_lines = list(product.attribute_line_ids)
         color_line = next((l for l in attr_lines if l.attribute_id.name.lower() == 'color'), None)
         size_line = next((l for l in attr_lines if l.attribute_id.name.lower() in ('size', 'talla')), None)
@@ -522,7 +522,8 @@ class ProductTemplate(models.Model):
         if other_lines:
             pos_map[3] = other_lines[0]
 
-        return [pos_map[pos] for pos in sorted(pos_map.keys())]
+        return pos_map
+
         
     def export_products_to_shopify(self, shopify_instance_ids, update=False, products=None, create_new=True):
         """
@@ -633,9 +634,13 @@ class ProductTemplate(models.Model):
                         variant_data.append(variant_result)
 
                 # Ordenar variantes por talla si existe línea de talla
-                size_line = next((l for l in base_option_attr_lines if l.attribute_id.name.lower() in ('size', 'talla')), None)
-                if size_line:
-                    variant_data.sort(key=lambda v: get_size_value(v.get(f"option{instance_id.size_option_position}", "")))
+                size_pos = instance_id.size_option_position
+                if size_pos in base_option_attr_lines:
+                    variant_data.sort(
+                        key=lambda v: get_size_value(
+                            v.get(f"option{size_pos}", "")
+                        )
+                    )
 
                 for position, variant in enumerate(variant_data, 1):
                     variant["position"] = position
@@ -649,20 +654,20 @@ class ProductTemplate(models.Model):
                 # CORREGIDO: Construir opciones usando directamente option_attr_lines (ya ordenado por posición)
                 options_data = []
 
-                for idx, attr_line in enumerate(base_option_attr_lines, 1):
-                    attr_name = attr_line.attribute_id.name.lower()
+                for position in sorted(base_option_attr_lines):
+                    attr_line = base_option_attr_lines[position]
 
-                    if attr_name == 'color':
+                    if position == instance_id.color_option_position:
                         if color_value:
                             color_values = [color_value.name]
                         else:
-                            color_values = sorted(set(v.get(f"option{idx}", "") for v in variant_data))
+                            color_values = sorted(set(v.get(f"option{position}", "") for v in variant_data))
                         options_data.append({
                             "name": "Color",
-                            "position": idx,
+                            "position": position,
                             "values": color_values
                         })
-                    elif attr_name in ('size', 'talla'):
+                    elif position == instance_id.size_option_position:
                         cname = color_value.name if color_value else 'N/A'
                         _logger.info("WSSH variant_data antes de construir size_values para producto '%s', color '%s': %s", product.name, cname, variant_data)
                         # Extraer valores únicos preservando el orden (variant_data ya está ordenado por talla)
@@ -670,7 +675,8 @@ class ProductTemplate(models.Model):
                         seen = set()
                         for v in variant_data:
                             _logger.info("WSSH Variante para options: %s", v)
-                            size_val = v.get(f"option{idx}", "")
+                            size_val = v.get(f"option{position}", "")
+
                             _logger.info("WSSH checking talla para variante SKU=%s => '%s'", v.get('sku', ''), size_val)
                             if not size_val:
                                 _logger.error("WSSH ERROR: Variante con valor de talla vacío en producto '%s', color '%s', variante: %s", product.name, cname, v)
@@ -687,15 +693,15 @@ class ProductTemplate(models.Model):
 
                         options_data.append({
                             "name": "Talla",
-                            "position": idx,
+                            "position": position,
                             "values": size_values
                         })
                     else:
                         # Otros atributos
-                        other_values = sorted(set(v.get(f"option{idx}", "") for v in variant_data))
+                        other_values = sorted(set(v.get(f"option{position}", "") for v in variant_data))
                         options_data.append({
                             "name": attr_line.attribute_id.name,
-                            "position": idx,
+                            "position": position,
                             "values": other_values
                         })
 
