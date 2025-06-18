@@ -204,6 +204,8 @@ class SaleOrder(models.Model):
             ], limit=1)
             if not product:
                 # Log detallado
+                sku = line.get('sku') or ''
+                
                 pattern = r'^[0-9AEIOU.#]{10,}$'
                 if sku and re.match(pattern, sku):    
                     _logger.error(
@@ -217,7 +219,6 @@ class SaleOrder(models.Model):
                         "Revise el mapping en 'shopify.variant.map' antes de importar este pedido."
                     )
                 # Intentar buscar por SKU (default_code) antes de usar el genérico
-                sku = line.get('sku') or ''
                 if sku:
                     product_by_sku = self.env['product.product'].sudo().search([
                         '|',
