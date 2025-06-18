@@ -751,6 +751,7 @@ class ProductTemplate(models.Model):
                                                         _logger.warning(f"WSSH Removed mapping for deleted variant {vid} on instance {instance_id.name}")
                                     except Exception as parse_e:
                                         _logger.error(f"WSSH Error processing 422 response: {str(parse_e)}")
+                                        
                                 _logger.error(f"WSSH Error updating product {product_map.web_product_id}: Status {response.status_code}, Response: {response.text}")
                                 cname = color_value.name if color_value else 'N/A'
                                 raise UserError(f"WSSH Error updating product {product.name} - {cname}: {response.text}")
