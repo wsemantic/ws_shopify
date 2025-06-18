@@ -605,7 +605,8 @@ class ResPartner(models.Model):
                 'type': 'delivery',
                 'customer_rank': 0,
             })
-            shipping_partner = self.create(address_vals)
+            #shipping_partner = self.create(address_vals)
+            shipping_partner = self.with_context(no_vat_validation=True).create(address_vals)
             _logger.info(f"WSSH Creado partner de envío: {shipping_partner.name} para {parent_partner.name}")
             return shipping_partner.id
 
