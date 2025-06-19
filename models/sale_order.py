@@ -128,6 +128,10 @@ class SaleOrder(models.Model):
                             shipping_address, res_partner, shopify_instance_id
                         )
                         _logger.info(f"WSSH Dirección de envío diferente procesada para pedido {order.get('name')}")
+                country_code = shipping_address.get('country_code') if shipping_address else res_partner.country_id.code
+                fp_id = self.env['res.partner']._determine_fiscal_position(country_code)
+                if fp_id and not apply_recargo_fiscal_position:
+                    res_partner.property_account_position_id = fp_id
 
                 # Preparar valores para el pedido
                 sale_order_vals = {
@@ -138,6 +142,10 @@ class SaleOrder(models.Model):
                     'date_order': date_order_value,
                     'user_id': shopify_instance_id.salesperson_id.id if shopify_instance_id.salesperson_id else False,
                 }
+                if apply_recargo_fiscal_position and fiscal_position:
+                    sale_order_vals['fiscal_position_id'] = fiscal_position.id
+                elif fp_id:
+                    sale_order_vals['fiscal_position_id'] = fp_id
 
                 # Crear el pedido
                 sale_order_rec = self.sudo().create(sale_order_vals)
@@ -147,10 +155,12 @@ class SaleOrder(models.Model):
                                                                       
                 sale_order_rec.state = 'draft'
 
-                # Paso 3: Asignar la posición fiscal al pedido si aplica recargo
+                # Paso 3: Asignar la posición fiscal al pedido
                 if apply_recargo_fiscal_position and fiscal_position:
                     sale_order_rec.fiscal_position_id = fiscal_position.id
                     _logger.info(f"WSSH Asignada posición fiscal de recargo al pedido {sale_order_rec.name}")
+                elif fp_id:
+                    sale_order_rec.fiscal_position_id = fp_id
 
                 # Crear el mapeo con Shopify
                 map_vals = {
@@ -184,7 +194,7 @@ class SaleOrder(models.Model):
             product_name = line.get('title', '')
             if re.search(r'recargo.*equivalencia', product_name, re.IGNORECASE):
                 continue
-            tax_list, tax_rate_total = self._process_tax_lines(line.get('tax_lines'))
+            tax_list, tax_rate_total = self._process_tax_lines(line.get('tax_lines'), service=False)
             product = self.env['product.product'].sudo().search([
                 ('shopify_variant_map_ids.web_variant_id', '=', line.get('variant_id')),
                 ('shopify_variant_map_ids.shopify_instance_id', '=', shopify_instance_id.id)
@@ -253,7 +263,7 @@ class SaleOrder(models.Model):
                 self.env['sale.order.line'].sudo().create(shopify_order_line_vals)
         
         for lineship in order.get('shipping_lines'):
-            tax_list, tax_rate_total = self._process_tax_lines(lineship.get('tax_lines'))
+            tax_list, tax_rate_total = self._process_tax_lines(lineship.get('tax_lines'), service=True)
             price_incl = float(lineship.get('price'))
             if shopify_instance_id.prices_include_tax:
                 price_excl = round(price_incl / (1 + tax_rate_total), 2) if tax_rate_total else price_incl
@@ -314,26 +324,49 @@ class SaleOrder(models.Model):
                 
         return product
 
-    def _process_tax_lines(self, tax_lines):
-        """Create/update taxes from Shopify tax lines and return their IDs along with total rate."""
+    def _map_tax_percent(self, percent, service=False):
+        """Return an existing Odoo tax mapped from a Shopify tax percent."""
+        goods_map = {
+            21: 'l10n_es.1_account_tax_template_s_iva21b',
+            10: 'l10n_es.1_account_tax_template_s_iva10b',
+            4: 'l10n_es.1_account_tax_template_s_iva4b',
+        }
+        service_map = {
+            21: 'l10n_es.1_account_tax_template_s_iva21s',
+            10: 'l10n_es.1_account_tax_template_s_iva10s',
+            4: 'l10n_es.1_account_tax_template_s_iva4s',
+        }
+
+        mapping = service_map if service else goods_map
+        xml_id = mapping.get(percent)
+        if xml_id:
+            return self.env.ref(xml_id, raise_if_not_found=False)
+        return None
+
+    def _process_tax_lines(self, tax_lines, service=False):
+        """Map Shopify tax lines to Odoo taxes and return their IDs with the total rate."""
         tax_list = []
         tax_rate_total = 0.0
         if tax_lines:
             for tax_line in tax_lines:
-                tax_rate_total += float(tax_line.get('rate', 0))
-                vals = {
-                    'name': tax_line.get('title')
-                }
-                if tax_line.get('rate'):
-                    vals['amount'] = tax_line.get('rate') * 100
-                tax = self.env['account.tax'].sudo().search([('name', '=', tax_line.get('title'))], limit=1)
-                if tax:
-                    tax.sudo().write(vals)
-                else:
-                    tax = self.env['account.tax'].sudo().create(vals)
-                if str(tax_line.get('price')) != '0.00':
+                rate = float(tax_line.get('rate', 0))
+                tax_rate_total += rate
+                percent = round(rate * 100)
+                tax = self._map_tax_percent(percent, service=service)
+                if not tax:
+                    vals = {
+                        'name': tax_line.get('title'),
+                        'amount': percent,
+                    }
+                    tax = self.env['account.tax'].sudo().search([('name', '=', tax_line.get('title'))], limit=1)
+                    if tax:
+                        tax.sudo().write(vals)
+                    else:
+                        tax = self.env['account.tax'].sudo().create(vals)
+                if str(tax_line.get('price')) != '0.00' and tax:
                     tax_list.append(tax.id)
         return tax_list, tax_rate_total
+
 
     def get_order_url(self, shopify_instance_id, endpoint):
         # Construye la URL para la API de Shopify basada en la instancia y el endpoint

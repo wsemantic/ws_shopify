@@ -286,6 +286,11 @@ class ResPartner(models.Model):
             'ref': metafields.get('ref') or ('SID' + str(shopify_customer.get('id'))),
             'user_id': shopify_instance_id.salesperson_id.id if shopify_instance_id.salesperson_id else False,  # Asignar comercial
         })
+
+        country_code = first_address.get('country_code')
+        fp_id = self._determine_fiscal_position(country_code)
+        if fp_id:
+            vals['property_account_position_id'] = fp_id
         
         # Añadir metafields adicionales
         if 'vat' in metafields:
@@ -393,6 +398,25 @@ class ResPartner(models.Model):
         pattern = r'^[\d\+\-\s\(\)]+$'
         return isinstance(phone, str) and re.match(pattern, phone)
 
+    def _determine_fiscal_position(self, country_code):
+        """Return the fiscal position ID based on the country code."""
+        if not country_code or country_code == 'ES':
+            return False
+
+        eu_countries = {
+            'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE',
+            'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT',
+            'RO', 'SK', 'SI', 'ES', 'SE'
+        }
+
+        if country_code in eu_countries:
+            xml_id = 'l10n_es.1_fp_intra'
+        else:
+            xml_id = 'l10n_es.1_fp_extra'
+
+        fp = self.env.ref(xml_id, raise_if_not_found=False)
+        return fp.id if fp else False
+
     def get_or_create_partner_from_shopify(self, shopify_customer, shopify_instance_id):
         """Busca o crea un partner basado en datos de Shopify, reutilizable desde sale.order."""
         # Obtener metafields si no existen
@@ -411,6 +435,8 @@ class ResPartner(models.Model):
             _logger.info(f"WSSH Creado nuevo partner desde Shopify: {partner.name}")
         else:
             _logger.info(f"WSSH Partner existente encontrado desde Shopify: {partner.name}")
+            vals_update = self.prepare_customer_vals(shopify_customer, shopify_instance_id)
+            partner.with_context(no_vat_validation=True).write(vals_update)
         return partner
 
     def export_customers_to_shopify(self, shopify_instance_ids, update):
