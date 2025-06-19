@@ -180,24 +180,11 @@ class SaleOrder(models.Model):
         if shopify_order_id.order_line and not skip_existing_order:
             shopify_order_id.order_line.unlink()
 
-        dict_tax = {}
         for line in order.get('line_items'):
             product_name = line.get('title', '')
             if re.search(r'recargo.*equivalencia', product_name, re.IGNORECASE):
                 continue
-            tax_list = []
-            if line.get('tax_lines'):
-                for tax_line in line.get('tax_lines'):
-                    dict_tax['name'] = tax_line.get('title')
-                    if tax_line.get('rate'):
-                        dict_tax['amount'] = tax_line.get('rate') * 100
-                    tax = self.env['account.tax'].sudo().search([('name', '=', tax_line.get('title'))], limit=1)
-                    if tax:
-                        tax.sudo().write(dict_tax)
-                    else:
-                        tax = self.env['account.tax'].sudo().create(dict_tax)
-                    if tax_line.get('price') != '0.00':
-                        tax_list.append(tax.id)
+            tax_list, tax_rate_total = self._process_tax_lines(line.get('tax_lines'))
             product = self.env['product.product'].sudo().search([
                 ('shopify_variant_map_ids.web_variant_id', '=', line.get('variant_id')),
                 ('shopify_variant_map_ids.shopify_instance_id', '=', shopify_instance_id.id)
@@ -247,11 +234,7 @@ class SaleOrder(models.Model):
                 
             if product:
                 # Precio recibido de Shopify (incluye IVA y descuento ya aplicado)
-                price_incl = float(line.get('price')) # aplico descuento al precio globalmente con campo total_discount_percentage más abajo #- float(line.get('total_discount', 0))
-                tax_rate_total = 0.0
-                for tax_line in line.get('tax_lines', []):
-                    if tax_line.get('rate'):
-                        tax_rate_total += float(tax_line.get('rate'))
+                price_incl = float(line.get('price'))
                 # Si los precios no incluyen IVA, no dividir; usar el precio tal cual
                 if shopify_instance_id.prices_include_tax:
                     price_excl = round(price_incl / (1 + tax_rate_total), 2) if tax_rate_total else price_incl
@@ -270,20 +253,26 @@ class SaleOrder(models.Model):
                 self.env['sale.order.line'].sudo().create(shopify_order_line_vals)
         
         for lineship in order.get('shipping_lines'):
-            price = round(float(lineship.get('price')) / 1.21, 2)
-            if price > 0:
+            tax_list, tax_rate_total = self._process_tax_lines(lineship.get('tax_lines'))
+            price_incl = float(lineship.get('price'))
+            if shopify_instance_id.prices_include_tax:
+                price_excl = round(price_incl / (1 + tax_rate_total), 2) if tax_rate_total else price_incl
+            else:
+                price_excl = price_incl
+
+            if price_excl > 0:
                 delivery_product = self.env['product.product'].sudo().search(
                     [('name', '=', lineship.get('title'))], limit=1)
                 if not delivery_product:
                     delivery_product = self._create_or_get_product(lineship.get('title'), '', 'shipping')
-                
+
                 if delivery_product:
                     shipping_vals = {
                         'product_id': delivery_product.id,
                         'name': "Shipping",
-                        'price_unit': float(lineship.get('price')),
+                        'price_unit': price_excl,
                         'order_id': shopify_order_id.id,
-                        'tax_id': [(6, 0, [])]
+                        'tax_id': [(6, 0, tax_list)]
                     }
                     self.env['sale.order.line'].sudo().create(shipping_vals)
 
@@ -324,6 +313,27 @@ class SaleOrder(models.Model):
                 shipping = self.env['delivery.carrier'].sudo().create(vals)
                 
         return product
+
+    def _process_tax_lines(self, tax_lines):
+        """Create/update taxes from Shopify tax lines and return their IDs along with total rate."""
+        tax_list = []
+        tax_rate_total = 0.0
+        if tax_lines:
+            for tax_line in tax_lines:
+                tax_rate_total += float(tax_line.get('rate', 0))
+                vals = {
+                    'name': tax_line.get('title')
+                }
+                if tax_line.get('rate'):
+                    vals['amount'] = tax_line.get('rate') * 100
+                tax = self.env['account.tax'].sudo().search([('name', '=', tax_line.get('title'))], limit=1)
+                if tax:
+                    tax.sudo().write(vals)
+                else:
+                    tax = self.env['account.tax'].sudo().create(vals)
+                if str(tax_line.get('price')) != '0.00':
+                    tax_list.append(tax.id)
+        return tax_list, tax_rate_total
 
     def get_order_url(self, shopify_instance_id, endpoint):
         # Construye la URL para la API de Shopify basada en la instancia y el endpoint
