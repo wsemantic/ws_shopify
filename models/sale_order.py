@@ -257,8 +257,8 @@ class SaleOrder(models.Model):
                     'name': product_name,
                     'product_uom_qty': line.get('quantity'),
                     'price_unit': price_excl,
-                    'discount': total_discount_percentage if total_discount_percentage else 0.0,
-                    'tax_id': [(6, 0, tax_list)]
+                    'discount': total_discount_percentage if total_discount_percentage else 0.0
+                    #'tax_id': [(6, 0, tax_list)]
                 }
                 self.env['sale.order.line'].sudo().create(shopify_order_line_vals)
         
@@ -281,8 +281,8 @@ class SaleOrder(models.Model):
                         'product_id': delivery_product.id,
                         'name': "Shipping",
                         'price_unit': price_excl,
-                        'order_id': shopify_order_id.id,
-                        'tax_id': [(6, 0, tax_list)]
+                        'order_id': shopify_order_id.id
+                        #'tax_id': [(6, 0, tax_list)]
                     }
                     self.env['sale.order.line'].sudo().create(shipping_vals)
 
