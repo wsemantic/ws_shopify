@@ -45,9 +45,15 @@ class ShopifyInstance(models.Model):
     )
 
     prices_include_tax = fields.Boolean(
-        string='Prices Include Tax', 
-        default=True, 
+        string='Prices Include Tax',
+        default=True,
         help='Indicate if prices in Shopify include taxes. If unchecked, prices are assumed to be tax-excluded and will not be adjusted during order import.'
+    )
+
+    regenerar_partner_en_cambios = fields.Boolean(
+        string='Regenerar Partner en Cambios',
+        default=False,
+        help='Clonar el partner cuando se detecten cambios en la dirección para generar un nuevo ID.'
     )
 
     # create a method to authenticate with shopify instance

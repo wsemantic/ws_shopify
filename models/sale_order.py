@@ -106,7 +106,10 @@ class SaleOrder(models.Model):
             customer_for_search = shopify_customer.copy()
             if billing_address:
                 customer_for_search['default_address'] = billing_address
-            res_partner = self.env['res.partner'].get_or_create_partner_from_shopify(customer_for_search, shopify_instance_id)
+            res_partner = self.env['res.partner'].get_or_create_partner(
+                customer_for_search,
+                shopify_instance_id,
+            )
             if res_partner:
                 dt = parser.isoparse(order.get('created_at'))
                                                   
@@ -124,7 +127,14 @@ class SaleOrder(models.Model):
 
                 # Actualizar siempre la dirección de facturación con la información del pedido
                 if billing_address:
-                    res_partner.apply_address(billing_address, shopify_instance_id, 'invoice')
+                    merged = res_partner._merge_contact_fields(
+                        billing_address,
+                        {'email': order.get('email') or order.get('customer', {}).get('email')}
+                    )
+                    billing_vals = res_partner.prepare_address_vals(
+                        merged, shopify_instance_id, 'invoice'
+                    )
+                    res_partner = res_partner._write_with_clone(billing_vals, shopify_instance_id)
 
                 # Procesar dirección de envío
                 partner_shipping_id = res_partner.id  # Por defecto, usar el mismo partner
@@ -132,8 +142,11 @@ class SaleOrder(models.Model):
                 if shipping_address:
                     if res_partner.addresses_are_different(shipping_address, billing_address):
                         # Si difiere, localizar o crear la dirección de envío actualizando la existente
-                        partner_shipping_id = res_partner.get_or_create_shipping_partner(
-                            shipping_address, res_partner, shopify_instance_id
+                        partner_shipping_id = self.env['res.partner'].get_or_create_partner(
+                            shipping_address,
+                            shopify_instance_id,
+                            address_type='delivery',
+                            parent_partner=res_partner,
                         )
                         _logger.info(
                             f"WSSH Dirección de envío diferente procesada para pedido {order.get('name')}"
@@ -145,7 +158,18 @@ class SaleOrder(models.Model):
                             ('type', '=', 'delivery')
                         ], limit=1)
                         if existing_shipping:
-                            existing_shipping.apply_address(shipping_address, shopify_instance_id, 'delivery')
+                            address_vals = existing_shipping.prepare_address_vals(
+                                shipping_address, shopify_instance_id, 'delivery'
+                            )
+                            parent_map = res_partner.shopify_partner_map_ids.filtered(
+                                lambda m: m.shopify_instance_id == shopify_instance_id
+                            )
+                            shopify_pid = parent_map.shopify_partner_id if parent_map else ''
+                            existing_shipping = existing_shipping._write_with_clone(
+                                address_vals,
+                                shopify_instance_id,
+                                None
+                            )
 
                 country_code = (shipping_address or billing_address or {}).get('country_code') or res_partner.country_id.code
                 fp_id = self.env['res.partner']._determine_fiscal_position(country_code)
@@ -394,7 +418,7 @@ class SaleOrder(models.Model):
         return shop_url
 
     def check_customer(self, customer, shopify_instance_id):
-        # Este método ya no es necesario, se elimina y se usa get_or_create_partner_from_shopify directamente
+        # Este método quedó obsoleto tras unificar la lógica de creación de partners
         pass
 
     def import_shopify_orders(self, shopify_instance_ids, skip_existing_order, from_date, to_date):
