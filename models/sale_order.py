@@ -99,8 +99,14 @@ class SaleOrder(models.Model):
                 break  # No necesitamos seguir buscando
 
         # Procesar el cliente y preparar los valores del pedido
-        if order.get('customer'):
-            res_partner = self.env['res.partner'].get_or_create_partner_from_shopify(order.get('customer'), shopify_instance_id)
+        shopify_customer = order.get('customer') or {}
+        billing_address = order.get('billing_address') or shopify_customer.get('default_address', {})
+
+        if shopify_customer:
+            customer_for_search = shopify_customer.copy()
+            if billing_address:
+                customer_for_search['default_address'] = billing_address
+            res_partner = self.env['res.partner'].get_or_create_partner_from_shopify(customer_for_search, shopify_instance_id)
             if res_partner:
                 dt = parser.isoparse(order.get('created_at'))
                                                   
@@ -116,19 +122,32 @@ class SaleOrder(models.Model):
                     else:
                         raise UserError(_(f"WSSH Posición fiscal de recargo no encontrada"))
 
+                # Actualizar siempre la dirección de facturación con la información del pedido
+                if billing_address:
+                    res_partner.apply_address(billing_address, shopify_instance_id, 'invoice')
+
                 # Procesar dirección de envío
                 partner_shipping_id = res_partner.id  # Por defecto, usar el mismo partner
                 shipping_address = order.get('shipping_address')
                 if shipping_address:
-                    # Verificar si la dirección de envío es diferente a la de facturación
-                    billing_address = order.get('billing_address') or order.get('customer', {}).get('default_address', {})
                     if res_partner.addresses_are_different(shipping_address, billing_address):
-                        # Crear o buscar partner hijo para dirección de envío
+                        # Si difiere, localizar o crear la dirección de envío actualizando la existente
                         partner_shipping_id = res_partner.get_or_create_shipping_partner(
                             shipping_address, res_partner, shopify_instance_id
                         )
-                        _logger.info(f"WSSH Dirección de envío diferente procesada para pedido {order.get('name')}")
-                country_code = shipping_address.get('country_code') if shipping_address else res_partner.country_id.code
+                        _logger.info(
+                            f"WSSH Dirección de envío diferente procesada para pedido {order.get('name')}"
+                        )
+                    else:
+                        # Si coincide con la de facturación, actualizar la dirección de envío solo si existe
+                        existing_shipping = self.env['res.partner'].sudo().search([
+                            ('parent_id', '=', res_partner.id),
+                            ('type', '=', 'delivery')
+                        ], limit=1)
+                        if existing_shipping:
+                            existing_shipping.apply_address(shipping_address, shopify_instance_id, 'delivery')
+
+                country_code = (shipping_address or billing_address or {}).get('country_code') or res_partner.country_id.code
                 fp_id = self.env['res.partner']._determine_fiscal_position(country_code)
                 if fp_id and not apply_recargo_fiscal_position:
                     res_partner.property_account_position_id = fp_id
