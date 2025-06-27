@@ -34,6 +34,7 @@
                                     </group>
                                 </form>
                             </field>
+                            <field name="nif_approved"/>
                         </group>
                     </group>
                 </page>

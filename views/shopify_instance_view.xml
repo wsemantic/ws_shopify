@@ -26,7 +26,8 @@
                                         <field name="shopify_host"/>
 										<field name="salesperson_id"/> 
                                         <field name="shopify_active"/>
-										<field name="prices_include_tax"/>
+                                        <field name="prices_include_tax"/>
+                                        <field name="regenerar_partner_en_cambios"/>
                                     </group>
                                 </group>
                             </page>

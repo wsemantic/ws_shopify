@@ -22,6 +22,11 @@ class ResPartner(models.Model):
         'partner_id',
         string='Shopify Mappings'
     )
+
+    nif_approved = fields.Boolean(
+        string='Aprobado NIF',
+        default=True,
+    )
     
 
     def import_shopify_customers(self, shopify_instance_ids, skip_existing_customer):
@@ -299,40 +304,16 @@ class ResPartner(models.Model):
         return vals
 
     def create_customers(self, shopify_customers, shopify_instance_id, skip_existing_customer):
+        """Create or update partners from a list of Shopify customers."""
         customer_list = []
         for shopify_customer in shopify_customers:
-            partner = self._find_existing_partner(shopify_customer, shopify_instance_id)
-            if partner:                
-                mapping = partner.shopify_partner_map_ids.filtered(lambda m: m.shopify_instance_id == shopify_instance_id)
-                
-                if mapping:
-                    _logger.info(f"WSSH Partner existente encontrado {partner.name} id {shopify_customer.get('id')} skip {skip_existing_customer} existia mapping")
-                    mapping.write({'shopify_partner_id': shopify_customer.get('id')})
-                else:
-                    _logger.info(f"WSSH Partner existente encontrado {partner.name} id {shopify_customer.get('id')} skip {skip_existing_customer} creando mapping partner id{partner.id} instance{shopify_instance_id.id}")
-                    self.env['shopify.partner.map'].create({
-                        'partner_id': partner.id,
-                        'shopify_partner_id': shopify_customer.get('id'),
-                        'shopify_instance_id': shopify_instance_id.id,
-                    })            
-                    if skip_existing_customer:
-                        partner.write({'user_id':shopify_instance_id.salesperson_id.id if shopify_instance_id.salesperson_id else False})  # Asignar comercial                    
-                if not skip_existing_customer:
-                    vals_update = self.prepare_customer_vals(shopify_customer, shopify_instance_id)
-                    partner.with_context(no_vat_validation=True).write(vals_update)
-                
-            else:
-                _logger.info(f"WSSH Partner NO encontrado id {shopify_customer.get('id')}")
-                vals = self.prepare_customer_vals(shopify_customer, shopify_instance_id)  
-                partner = super(ResPartner, self).with_context(no_vat_validation=True).create(vals)
-                self.env['shopify.partner.map'].create({
-                    'partner_id': partner.id,
-                    'shopify_partner_id': shopify_customer.get('id'),
-                    'shopify_instance_id': shopify_instance_id.id,
-                })
-            
+            partner = self.get_or_create_partner(
+                shopify_customer,
+                shopify_instance_id,
+                skip_update=skip_existing_customer,
+            )
             customer_list.append(partner.id)
-        
+
         return customer_list
 
     def _get_customer_name(self, first_name, last_name, email):
@@ -341,6 +322,16 @@ class ResPartner(models.Model):
         if first_name and last_name:
             name = (first_name + ' ' + last_name).strip()
         return name or email or _("Shopify Customer")
+
+    def _merge_contact_fields(self, base_address, fallback):
+        """Return a copy of ``base_address`` merging email/phone from ``fallback`` if missing."""
+        merged = (base_address or {}).copy()
+        if fallback:
+            if not merged.get('email'):
+                merged['email'] = fallback.get('email')
+            if not merged.get('phone'):
+                merged['phone'] = fallback.get('phone')
+        return merged
 
     def _find_existing_partner(self, shopify_customer, shopify_instance_id):
         shopify_customer_id = shopify_customer.get('id')
@@ -398,6 +389,25 @@ class ResPartner(models.Model):
 
         return None
 
+    def _ensure_mapping(self, partner, shopify_partner_id, shopify_instance_id, assign_salesperson=False):
+        """Create or update the Shopify mapping for ``partner``."""
+        mapping = partner.shopify_partner_map_ids.filtered(
+            lambda m: m.shopify_instance_id == shopify_instance_id
+        )
+        if mapping:
+            mapping.write({'shopify_partner_id': str(shopify_partner_id)})
+        else:
+            self.env['shopify.partner.map'].sudo().create({
+                'partner_id': partner.id,
+                'shopify_partner_id': str(shopify_partner_id),
+                'shopify_instance_id': shopify_instance_id.id,
+            })
+            if assign_salesperson and shopify_instance_id.salesperson_id:
+                partner.write({'user_id': shopify_instance_id.salesperson_id.id})
+        return partner.shopify_partner_map_ids.filtered(
+            lambda m: m.shopify_instance_id == shopify_instance_id
+        )
+
     def _is_valid_email(self, email):
         pattern = r'^[\w\.\-\+]+@[\w\.-]+\.\w+$'
         return isinstance(email, str) and re.match(pattern, email)
@@ -425,27 +435,6 @@ class ResPartner(models.Model):
         fp = self.env.ref(xml_id, raise_if_not_found=False)
         return fp.id if fp else False
 
-    def get_or_create_partner_from_shopify(self, shopify_customer, shopify_instance_id):
-        """Busca o crea un partner basado en datos de Shopify, reutilizable desde sale.order."""
-        # Obtener metafields si no existen
-        if 'metafields' not in shopify_customer:
-            shopify_customer['metafields'] = self.get_customer_metafields(shopify_customer.get('id'), shopify_instance_id)
-            
-        partner = self._find_existing_partner(shopify_customer, shopify_instance_id)
-        if not partner:
-            vals = self.prepare_customer_vals(shopify_customer, shopify_instance_id)
-            partner = super(ResPartner, self).with_context(no_vat_validation=True).create(vals)
-            self.env['shopify.partner.map'].create({
-                'partner_id': partner.id,
-                'shopify_partner_id': shopify_customer.get('id'),
-                'shopify_instance_id': shopify_instance_id.id,
-            })
-            _logger.info(f"WSSH Creado nuevo partner desde Shopify: {partner.name}")
-        else:
-            _logger.info(f"WSSH Partner existente encontrado desde Shopify: {partner.name}")
-            vals_update = self.prepare_customer_vals(shopify_customer, shopify_instance_id)
-            partner.with_context(no_vat_validation=True).write(vals_update)
-        return partner
 
     def export_customers_to_shopify(self, shopify_instance_ids, update):
         if not shopify_instance_ids:
@@ -618,77 +607,11 @@ class ResPartner(models.Model):
 
     def apply_address(self, address_data, shopify_instance_id, address_type='contact'):
         """Actualiza la dirección del partner usando :meth:`prepare_address_vals`."""
-
         vals = self.prepare_address_vals(address_data, shopify_instance_id, address_type)
         if vals:
             self.with_context(no_vat_validation=True).write(vals)
         return vals
 
-    def get_or_create_shipping_partner(self, shipping_address, parent_partner, shopify_instance_id):
-        """Busca o crea (o actualiza) un partner hijo para dirección de envío.
-
-        Si la dirección ya está mapeada en ``shopify.partner.map`` mediante su
-        ``id`` de Shopify, se reutilizará ese contacto y se actualizará con los
-        datos del pedido. De lo contrario se localizará la primera dirección de
-        envío del partner padre y se actualizará o creará si no existe.
-        """
-        if not shipping_address:
-            return parent_partner.id
-
-        # 1) Comprobar si la dirección ya está mapeada como contacto independiente
-        shopify_address_id = shipping_address.get('id')
-        if shopify_address_id:
-            mapping = self.env['shopify.partner.map'].sudo().search([
-                ('shopify_partner_id', '=', str(shopify_address_id)),
-                ('shopify_instance_id', '=', shopify_instance_id.id),
-            ], limit=1)
-            if mapping:
-                mapping.partner_id.apply_address(shipping_address, shopify_instance_id, 'delivery')
-                _logger.info(
-                    "WSSH Dirección de envío encontrada por mapping: %s", mapping.partner_id.name
-                )
-                return mapping.partner_id.id
-
-        # 2) Buscar la primera dirección de envío existente del partner padre
-        existing_shipping_partner = self.search([
-            ('parent_id', '=', parent_partner.id),
-            ('type', '=', 'delivery')
-        ], limit=1)
-
-        if existing_shipping_partner:
-            existing_shipping_partner.apply_address(shipping_address, shopify_instance_id, 'delivery')
-            shipping_partner = existing_shipping_partner
-            _logger.info(
-                f"WSSH Dirección de envío actualizada para {parent_partner.name}: {existing_shipping_partner.name}"
-            )
-        else:
-            address_vals = self.prepare_address_vals(shipping_address, shopify_instance_id, 'delivery')
-            address_vals.update({
-                'parent_id': parent_partner.id,
-                'type': 'delivery',
-                'customer_rank': 0,
-            })
-            shipping_partner = self.with_context(no_vat_validation=True).create(address_vals)
-            _logger.info(
-                f"WSSH Creado partner de envío: {shipping_partner.name} para {parent_partner.name}"
-            )
-
-        # Crear o actualizar mapping si disponemos de id de Shopify
-        if shopify_address_id:
-            map_vals = {
-                'partner_id': shipping_partner.id,
-                'shopify_partner_id': str(shopify_address_id),
-                'shopify_instance_id': shopify_instance_id.id,
-            }
-            mapping = shipping_partner.shopify_partner_map_ids.filtered(
-                lambda m: m.shopify_instance_id == shopify_instance_id
-            )
-            if mapping:
-                mapping.write({'shopify_partner_id': str(shopify_address_id)})
-            else:
-                self.env['shopify.partner.map'].sudo().create(map_vals)
-
-        return shipping_partner.id
 
     def addresses_are_different(self, shipping_address, billing_address):
         """Compara si dos direcciones son diferentes."""
@@ -703,5 +626,138 @@ class ResPartner(models.Model):
             bill_val = (billing_address.get(field) or '').strip()
             if ship_val != bill_val:
                 return True
-                
-        return False        
+
+        return False
+
+    def _clone_partner(self, shopify_instance_id, shopify_partner_id=None, vals=None):
+        """Clone the partner applying ``vals`` and reassign the Shopify mapping."""
+        vals = vals or {}
+        new_partner = self.with_context(no_vat_validation=True).copy(default=vals)
+        mapping = self.shopify_partner_map_ids.filtered(
+            lambda m: m.shopify_instance_id == shopify_instance_id
+        )
+        if mapping:
+            update_vals = {'partner_id': new_partner.id}
+            if shopify_partner_id:
+                update_vals['shopify_partner_id'] = str(shopify_partner_id)
+            mapping.write(update_vals)
+        elif shopify_partner_id:
+            self.env['shopify.partner.map'].sudo().create({
+                'partner_id': new_partner.id,
+                'shopify_partner_id': str(shopify_partner_id),
+                'shopify_instance_id': shopify_instance_id.id,
+            })
+        return new_partner
+
+    def _write_with_clone(self, vals, shopify_instance_id, shopify_partner_id=None):
+        """Update partner fields cloning the partner if values differ."""
+        needs_update = any(
+            (self[field] or '') != (vals.get(field) or '')
+            for field in vals
+        )
+
+        if not needs_update:
+            return self
+
+        if getattr(shopify_instance_id, 'regenerar_partner_en_cambios', False):
+            return self._clone_partner(shopify_instance_id, shopify_partner_id, vals)
+
+        self.with_context(no_vat_validation=True).write(vals)
+        return self
+
+    def get_or_create_partner(self, data, shopify_instance_id, address_type='invoice', parent_partner=None, skip_update=False):
+        """Create or update an Odoo partner from Shopify data.
+
+        If ``address_type`` is ``'invoice'`` ``data`` should contain the full
+        Shopify customer dictionary. When ``address_type`` is ``'delivery'``
+        ``data`` must be a shipping address dictionary and ``parent_partner`` the
+        related invoice partner. Set ``skip_update`` to ``True`` to avoid
+        modifying existing invoice partners.
+        """
+
+        if address_type == 'invoice':
+            shopify_customer = data
+            if 'metafields' not in shopify_customer:
+                shopify_customer['metafields'] = self.get_customer_metafields(
+                    shopify_customer.get('id'), shopify_instance_id
+                )
+
+            partner = self._find_existing_partner(shopify_customer, shopify_instance_id)
+            mapping = None
+            if partner:
+                mapping = self._ensure_mapping(
+                    partner,
+                    shopify_customer.get('id'),
+                    shopify_instance_id,
+                    assign_salesperson=not skip_update,
+                )
+                _logger.info(
+                    "WSSH Partner existente encontrado desde Shopify: %s",
+                    partner.name,
+                )
+            else:
+                vals = self.prepare_customer_vals(shopify_customer, shopify_instance_id)
+                partner = super(ResPartner, self).with_context(no_vat_validation=True).create(vals)
+                mapping = self._ensure_mapping(partner, shopify_customer.get('id'), shopify_instance_id)
+                _logger.info("WSSH Creado nuevo partner desde Shopify: %s", partner.name)
+
+            if not skip_update:
+                vals_update = self.prepare_customer_vals(shopify_customer, shopify_instance_id)
+                default_address = shopify_customer.get('default_address', {}) or {}
+                merged = partner._merge_contact_fields(default_address, shopify_customer)
+                address_vals = self.prepare_address_vals(
+                    merged,
+                    shopify_instance_id,
+                    'invoice'
+                )
+                partner = partner._write_with_clone(address_vals, shopify_instance_id)
+
+                vat_shopify = shopify_customer.get('metafields', {}).get('vat')
+                if mapping and vat_shopify and (not partner.vat or vat_shopify != partner.vat):
+                    partner.nif_approved = False
+
+                partner.with_context(no_vat_validation=True).write(vals_update)
+
+            return partner
+
+        # Delivery address logic
+        shipping_address = data
+        if not shipping_address:
+            return parent_partner.id
+
+        parent_map = parent_partner.shopify_partner_map_ids.filtered(
+            lambda m: m.shopify_instance_id == shopify_instance_id
+        )
+        parent_shopify_id = parent_map.shopify_partner_id if parent_map else None
+        ref_value = 'SID#DELIVERY' + str(parent_shopify_id) if parent_shopify_id else False
+
+        existing_shipping_partner = self.search([
+            ('parent_id', '=', parent_partner.id),
+            ('type', '=', 'delivery')
+        ], limit=1)
+
+        address_vals = self.prepare_address_vals(shipping_address, shopify_instance_id, 'delivery')
+        address_vals['ref'] = ref_value
+        if existing_shipping_partner:
+            shipping_partner = existing_shipping_partner._write_with_clone(
+                address_vals, shopify_instance_id, None
+            )
+            _logger.info(
+                "WSSH Dirección de envío actualizada para %s: %s",
+                parent_partner.name,
+                shipping_partner.name,
+            )
+        else:
+            address_vals.update({
+                'parent_id': parent_partner.id,
+                'type': 'delivery',
+                'customer_rank': 0,
+            })
+            shipping_partner = self.with_context(no_vat_validation=True).create(address_vals)
+            _logger.info(
+                "WSSH Creado partner de envío: %s para %s",
+                shipping_partner.name,
+                parent_partner.name,
+            )
+
+        return shipping_partner.id
