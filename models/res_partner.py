@@ -356,39 +356,47 @@ class ResPartner(models.Model):
         if partner:
             return partner
 
-        # Obtener datos para búsqueda por prioridad
+        # Intentar localizar por los campos más fiables disponibles
         ref_value = metafields.get('ref')
         _logger.info(f"WSSH Find Partner REF {ref_value}")
         email = shopify_customer.get('email') or first_address.get('email')
         phone = shopify_customer.get('phone') or first_address.get('phone')
 
-        # Limpiar y validar campos
-        if email: email = shopify_instance_id.clean_string(email)
-        if phone: phone = shopify_instance_id.clean_string(phone)
+        email_valid = False
+        if email:
+            email = shopify_instance_id.clean_string(email)
+            email_valid = self._is_valid_email(email)
+            if not email_valid:
+                _logger.warning("El email '%s' no es válido y se omite en la búsqueda", email)
+                email = None
 
-        if email and not self._is_valid_email(email):
-            _logger.warning("El email '%s' no es válido y se omite en la búsqueda", email)
-            email = None
-        if phone and not self._is_valid_phone(phone):
-            _logger.warning("El teléfono '%s' no es válido y se omite en la búsqueda", phone)
-            phone = None
+        if phone:
+            phone = shopify_instance_id.clean_string(phone)
+            if not self._is_valid_phone(phone):
+                _logger.warning("El teléfono '%s' no es válido y se omite en la búsqueda", phone)
+                phone = None
 
-        # Construir dominio de búsqueda por orden de prioridad: ref, email, phone
-        or_conditions = []
-        if ref_value: or_conditions.append(('ref', '=', ref_value))
-        if email: or_conditions.append(('email', '=', email))
-        if phone: or_conditions.append(('phone', '=', phone))
-
-        if not or_conditions:
-            return None
-        
-        # Construir el OR completo
+        # Priorizar la referencia y el email combinados en una búsqueda OR
         domain = []
-        if len(or_conditions) > 1:
-            domain = ['|'] * (len(or_conditions) - 1)
-        domain.extend(or_conditions)
-        
-        return self.search(domain, limit=1)
+        if ref_value and email:
+            domain = ['|', ('ref', '=', ref_value), ('email', '=', email)]
+        elif ref_value:
+            domain = [('ref', '=', ref_value)]
+        elif email:
+            domain = [('email', '=', email)]
+
+        if domain:
+            partner = self.search(domain, limit=1)
+            if partner:
+                return partner
+
+        # Si no se encontró por ref/email, intentar por teléfono como último recurso
+        if phone:
+            partner = self.search([('phone', '=', phone)], limit=1)
+            if partner:
+                return partner
+
+        return None
 
     def _is_valid_email(self, email):
         pattern = r'^[\w\.\-\+]+@[\w\.-]+\.\w+$'
@@ -566,7 +574,12 @@ class ResPartner(models.Model):
 # Añadir estos métodos a la clase ResPartner en res_partner.py
 
     def prepare_address_vals(self, address_data, shopify_instance_id, address_type='contact'):
-        """Prepara los valores para crear o actualizar una dirección específica."""
+        """Prepara los valores para crear o actualizar una dirección específica.
+
+        El parámetro ``address_type`` permite diferenciar si la dirección es de
+        facturación o envío para incluir campos como el correo electrónico sólo
+        cuando sea necesario.
+        """
         if not address_data:
             return {}
             
@@ -595,46 +608,87 @@ class ResPartner(models.Model):
             'supplier_rank': 0,
             'customer_rank': 1 if address_type == 'invoice' else 0,
         }
-        
+
+        # Incluir el email solo para la dirección de facturación para evitar
+        # sobrescribirlo en contactos de envío donde normalmente no se usa.
+        if address_type == 'invoice':
+            vals['email'] = email
+
+        return vals
+
+    def apply_address(self, address_data, shopify_instance_id, address_type='contact'):
+        """Actualiza la dirección del partner usando :meth:`prepare_address_vals`."""
+
+        vals = self.prepare_address_vals(address_data, shopify_instance_id, address_type)
+        if vals:
+            self.with_context(no_vat_validation=True).write(vals)
         return vals
 
     def get_or_create_shipping_partner(self, shipping_address, parent_partner, shopify_instance_id):
-        """Busca o crea un partner hijo para dirección de envío."""
+        """Busca o crea (o actualiza) un partner hijo para dirección de envío.
+
+        Si la dirección ya está mapeada en ``shopify.partner.map`` mediante su
+        ``id`` de Shopify, se reutilizará ese contacto y se actualizará con los
+        datos del pedido. De lo contrario se localizará la primera dirección de
+        envío del partner padre y se actualizará o creará si no existe.
+        """
         if not shipping_address:
             return parent_partner.id
-            
-        # Buscar partner hijo existente con los mismos datos
-        address_vals = self.prepare_address_vals(shipping_address, shopify_instance_id, 'delivery')
-        
-        # Buscar por dirección similar en los hijos del partner
-        domain = [
+
+        # 1) Comprobar si la dirección ya está mapeada como contacto independiente
+        shopify_address_id = shipping_address.get('id')
+        if shopify_address_id:
+            mapping = self.env['shopify.partner.map'].sudo().search([
+                ('shopify_partner_id', '=', str(shopify_address_id)),
+                ('shopify_instance_id', '=', shopify_instance_id.id),
+            ], limit=1)
+            if mapping:
+                mapping.partner_id.apply_address(shipping_address, shopify_instance_id, 'delivery')
+                _logger.info(
+                    "WSSH Dirección de envío encontrada por mapping: %s", mapping.partner_id.name
+                )
+                return mapping.partner_id.id
+
+        # 2) Buscar la primera dirección de envío existente del partner padre
+        existing_shipping_partner = self.search([
             ('parent_id', '=', parent_partner.id),
             ('type', '=', 'delivery')
-        ]
-        
-        # Añadir filtros por campos clave si existen
-        if address_vals.get('street'):
-            domain.append(('street', '=', address_vals['street']))
-        if address_vals.get('city'):
-            domain.append(('city', '=', address_vals['city']))
-        if address_vals.get('zip'):
-            domain.append(('zip', '=', address_vals['zip']))
-            
-        existing_shipping_partner = self.search(domain, limit=1)
-        
+        ], limit=1)
+
         if existing_shipping_partner:
-            return existing_shipping_partner.id
+            existing_shipping_partner.apply_address(shipping_address, shopify_instance_id, 'delivery')
+            shipping_partner = existing_shipping_partner
+            _logger.info(
+                f"WSSH Dirección de envío actualizada para {parent_partner.name}: {existing_shipping_partner.name}"
+            )
         else:
-            # Crear nuevo partner hijo para dirección de envío
+            address_vals = self.prepare_address_vals(shipping_address, shopify_instance_id, 'delivery')
             address_vals.update({
                 'parent_id': parent_partner.id,
                 'type': 'delivery',
                 'customer_rank': 0,
             })
-            #shipping_partner = self.create(address_vals)
             shipping_partner = self.with_context(no_vat_validation=True).create(address_vals)
-            _logger.info(f"WSSH Creado partner de envío: {shipping_partner.name} para {parent_partner.name}")
-            return shipping_partner.id
+            _logger.info(
+                f"WSSH Creado partner de envío: {shipping_partner.name} para {parent_partner.name}"
+            )
+
+        # Crear o actualizar mapping si disponemos de id de Shopify
+        if shopify_address_id:
+            map_vals = {
+                'partner_id': shipping_partner.id,
+                'shopify_partner_id': str(shopify_address_id),
+                'shopify_instance_id': shopify_instance_id.id,
+            }
+            mapping = shipping_partner.shopify_partner_map_ids.filtered(
+                lambda m: m.shopify_instance_id == shopify_instance_id
+            )
+            if mapping:
+                mapping.write({'shopify_partner_id': str(shopify_address_id)})
+            else:
+                self.env['shopify.partner.map'].sudo().create(map_vals)
+
+        return shipping_partner.id
 
     def addresses_are_different(self, shipping_address, billing_address):
         """Compara si dos direcciones son diferentes."""
