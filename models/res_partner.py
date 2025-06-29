@@ -647,7 +647,6 @@ class ResPartner(models.Model):
                 'shopify_partner_id': str(shopify_partner_id),
                 'shopify_instance_id': shopify_instance_id.id,
             })
-        self.write({'active': False})
         return new_partner
 
     def _write_with_clone(self, vals, shopify_instance_id, shopify_partner_id=None):
