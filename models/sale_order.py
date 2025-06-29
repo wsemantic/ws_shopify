@@ -120,7 +120,7 @@ class SaleOrder(models.Model):
                 if apply_recargo_fiscal_position:
                     fiscal_position = self.env.ref('l10n_es.1_fp_recargo')
                     if fiscal_position:
-                        res_partner.property_account_position_id = fiscal_position.id
+                        res_partner.with_context(no_vat_validation=True).write({'property_account_position_id': fiscal_position.id})
                         _logger.info(f"WSSH Asignada posición fiscal de recargo al cliente {res_partner.name}")
                     else:
                         raise UserError(_(f"WSSH Posición fiscal de recargo no encontrada"))
@@ -174,7 +174,7 @@ class SaleOrder(models.Model):
                 country_code = (shipping_address or billing_address or {}).get('country_code') or res_partner.country_id.code
                 fp_id = self.env['res.partner']._determine_fiscal_position(country_code)
                 if fp_id and not apply_recargo_fiscal_position:
-                    res_partner.property_account_position_id = fp_id
+                    res_partner.with_context(no_vat_validation=True).write({'property_account_position_id': fp_id})
 
                 # Preparar valores para el pedido
                 sale_order_vals = {
