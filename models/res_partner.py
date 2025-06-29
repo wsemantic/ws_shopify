@@ -668,7 +668,12 @@ class ResPartner(models.Model):
 
         needs_update = False
         for field, value in vals.items():
-            if (self[field] or '') != (value or ''):
+            current = self[field]
+            if isinstance(current, models.BaseModel):
+                current = current.id
+            if isinstance(value, models.BaseModel):
+                value = value.id
+            if (current or '') != (value or ''):
                 needs_update = True
                 break
 
