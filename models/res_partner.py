@@ -403,7 +403,9 @@ class ResPartner(models.Model):
                 'shopify_instance_id': shopify_instance_id.id,
             })
             if assign_salesperson and shopify_instance_id.salesperson_id:
-                partner.write({'user_id': shopify_instance_id.salesperson_id.id})
+                partner.with_context(no_vat_validation=True).write({
+                    'user_id': shopify_instance_id.salesperson_id.id,
+                })
         return partner.shopify_partner_map_ids.filtered(
             lambda m: m.shopify_instance_id == shopify_instance_id
         )
@@ -649,7 +651,7 @@ class ResPartner(models.Model):
             })
 
         # Archive the original partner to avoid conflicts with existing orders
-        self.write({'active': False})
+        self.with_context(no_vat_validation=True).write({'active': False})
         return new_partner
 
     def _write_with_clone(self, vals, shopify_instance_id, shopify_partner_id=None):
