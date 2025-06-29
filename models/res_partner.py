@@ -684,7 +684,7 @@ class ResPartner(models.Model):
 
         if getattr(shopify_instance_id, 'regenerar_partner_en_cambios', False):
             partner_ref = vals.get('ref') or self.ref or ''
-            _logger.info(f"WSSH actualiza partner {partner_ref}")
+            _logger.info(f"WSSH regenerar partner {partner_ref}")
             return self._clone_partner(shopify_instance_id, shopify_partner_id, vals)
 
         self.with_context(no_vat_validation=True).write(vals)
