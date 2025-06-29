@@ -636,25 +636,41 @@ class ResPartner(models.Model):
         mapping = self.shopify_partner_map_ids.filtered(
             lambda m: m.shopify_instance_id == shopify_instance_id
         )
+        shopify_partner_id = shopify_partner_id or (
+            mapping.shopify_partner_id if mapping else None
+        )
         if mapping:
-            update_vals = {'partner_id': new_partner.id}
-            if shopify_partner_id:
-                update_vals['shopify_partner_id'] = str(shopify_partner_id)
-            mapping.write(update_vals)
-        elif shopify_partner_id:
+            mapping.sudo().unlink()
+        if shopify_partner_id:
             self.env['shopify.partner.map'].sudo().create({
                 'partner_id': new_partner.id,
                 'shopify_partner_id': str(shopify_partner_id),
                 'shopify_instance_id': shopify_instance_id.id,
             })
+
+        # Archive the original partner to avoid conflicts with existing orders
+        self.write({'active': False})
         return new_partner
 
     def _write_with_clone(self, vals, shopify_instance_id, shopify_partner_id=None):
         """Update partner fields cloning the partner if values differ."""
-        needs_update = any(
-            (self[field] or '') != (vals.get(field) or '')
-            for field in vals
-        )
+        if vals is None:
+            vals = {}
+
+        invalid_fields = [f for f in vals if f not in self._fields]
+        for f in invalid_fields:
+            vals.pop(f)
+        if invalid_fields:
+            _logger.warning(
+                "WSSH Ignorando campos inválidos en actualización de partner: %s",
+                ", ".join(invalid_fields),
+            )
+
+        needs_update = False
+        for field, value in vals.items():
+            if (self[field] or '') != (value or ''):
+                needs_update = True
+                break
 
         if not needs_update:
             return self
