@@ -647,6 +647,7 @@ class ResPartner(models.Model):
                 'shopify_partner_id': str(shopify_partner_id),
                 'shopify_instance_id': shopify_instance_id.id,
             })
+        self.write({'active': False})
         return new_partner
 
     def _write_with_clone(self, vals, shopify_instance_id, shopify_partner_id=None):
@@ -662,6 +663,7 @@ class ResPartner(models.Model):
         if getattr(shopify_instance_id, 'regenerar_partner_en_cambios', False):
             return self._clone_partner(shopify_instance_id, shopify_partner_id, vals)
 
+        _logger.info(f"WSSH regenera partner {vals.get('ref')}")
         self.with_context(no_vat_validation=True).write(vals)
         return self
 
