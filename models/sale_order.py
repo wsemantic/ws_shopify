@@ -170,6 +170,7 @@ class SaleOrder(models.Model):
                                 shopify_instance_id,
                                 None
                             )
+                            partner_shipping_id = existing_shipping.id
 
                 country_code = (shipping_address or billing_address or {}).get('country_code') or res_partner.country_id.code
                 fp_id = self.env['res.partner']._determine_fiscal_position(country_code)
