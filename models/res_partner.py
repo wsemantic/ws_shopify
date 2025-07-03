@@ -716,10 +716,7 @@ class ResPartner(models.Model):
                     shopify_instance_id,
                     assign_salesperson=not skip_update,
                 )
-                _logger.info(
-                    "WSSH Partner existente encontrado desde Shopify: %s",
-                    partner.name,
-                )
+                _logger.info(f"WSSH Partner existente encontrado desde Shopify {partner.name} skip {skip_update}")
             else:
                 vals = self.prepare_customer_vals(shopify_customer, shopify_instance_id)
                 partner = super(ResPartner, self).with_context(no_vat_validation=True).create(vals)
@@ -727,6 +724,7 @@ class ResPartner(models.Model):
                 _logger.info("WSSH Creado nuevo partner desde Shopify: %s", partner.name)
 
             if not skip_update:
+                _logger.info(f"WSSH No SKIP")
                 vals_update = self.prepare_customer_vals(shopify_customer, shopify_instance_id)
                 default_address = shopify_customer.get('default_address', {}) or {}
                 merged = partner._merge_contact_fields(default_address, shopify_customer)
