@@ -669,9 +669,9 @@ class ResPartner(models.Model):
             )
 
         needs_update = False
-        for field, value in vals.items():
-            _logger.info(f"WSSH CloNE: intera por {field} {value}")
+        for field, value in vals.items():            
             current = self[field]
+            _logger.info(f"WSSH CloNE: intera por Shopify {field} {value} valor ODOO {current}")
             if isinstance(current, models.BaseModel):
                 _logger.info(f"curr es instance de base model")
                 current = current.id
