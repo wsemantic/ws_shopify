@@ -449,10 +449,10 @@ class SaleOrder(models.Model):
                 
             # Configurar parámetros para la consulta a Shopify
             params = {
-                "limit": 50,  # Ajusta el tamaño de página según sea necesario
+                "limit": 1,  # Ajusta el tamaño de página según sea necesario
                 "pageInfo": None,
                 "status": "any",
-                "order_id ":"11621606326620"
+                "ids":"11621606326620"
             }
             if effective_from_date:
                 params["created_at_min"] = effective_from_date
