@@ -670,12 +670,16 @@ class ResPartner(models.Model):
 
         needs_update = False
         for field, value in vals.items():
+            _logger.info(f"WSSH CloNE: intera por {field} {value}")
             current = self[field]
             if isinstance(current, models.BaseModel):
+                _logger.info(f"curr es instance de base model")
                 current = current.id
             if isinstance(value, models.BaseModel):
+                _logger.info(f"val es instance de base model")
                 value = value.id
             if (current or '') != (value or ''):
+                _logger.info(f"valor diferente")
                 needs_update = True
                 break
 
