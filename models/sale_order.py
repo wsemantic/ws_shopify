@@ -452,7 +452,7 @@ class SaleOrder(models.Model):
                 "limit": 50,  # Ajusta el tamaño de página según sea necesario
                 "pageInfo": None,
                 "status": "any",
-                "name":"SH8604"
+                "order_id ":"11621606326620"
             }
             if effective_from_date:
                 params["created_at_min"] = effective_from_date
