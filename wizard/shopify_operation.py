@@ -93,7 +93,6 @@ class ShopifyOperation(models.TransientModel):
                                                                   self.orders_from_date,
                                                                   self.orders_to_date)
             if orders:
-                self.shopify_instance_id.shopify_last_date_order_import = datetime.now()
                 ids = orders
                 action_name = "ws_shopify.action_sale_order_shopify"
 

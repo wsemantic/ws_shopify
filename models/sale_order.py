@@ -60,7 +60,11 @@ class SaleOrder(models.Model):
                     break
             if all_orders:
                 orders = self.create_shopify_order(all_orders, shopify_instance_id, skip_existing_order, status='draft')
-                shopify_instance_id.shopify_last_date_order_import = fields.Datetime.now()
+                if len(all_orders) >= params.get('limit', 0):
+                    last_dt = parser.isoparse(all_orders[-1].get('created_at'))
+                    shopify_instance_id.shopify_last_date_order_import = last_dt.astimezone(utc)
+                else:
+                    shopify_instance_id.shopify_last_date_order_import = fields.Datetime.now()
                 return orders
             else:
                 _logger.info("No draft orders found in Shopify.")
@@ -449,10 +453,9 @@ class SaleOrder(models.Model):
                 
             # Configurar parámetros para la consulta a Shopify
             params = {
-                "limit": 1,  # Ajusta el tamaño de página según sea necesario
+                "limit": 250,  # Ajusta el tamaño de página según sea necesario
                 "pageInfo": None,
-                "status": "any",
-                "ids":"11621606326620"
+                "status": "any"
             }
             if effective_from_date:
                 params["created_at_min"] = effective_from_date
@@ -478,7 +481,11 @@ class SaleOrder(models.Model):
                 _logger.info(f"WSSH Found {len(all_orders)} para {shopify_instance_id.name}")
                 orders = self.create_shopify_order(all_orders, shopify_instance_id, skip_existing_order, status='open')
                 orders_total.extend(orders)
-                shopify_instance_id.shopify_last_date_order_import = fields.Datetime.now()
+                if len(all_orders) >= params.get('limit', 0):
+                    last_dt = parser.isoparse(all_orders[-1].get('created_at'))
+                    shopify_instance_id.shopify_last_date_order_import = last_dt.astimezone(utc)
+                else:
+                    shopify_instance_id.shopify_last_date_order_import = fields.Datetime.now()
             else:
                 _logger.info(f"WSSH No orders found in shopify {shopify_instance_id.name}")
                 
