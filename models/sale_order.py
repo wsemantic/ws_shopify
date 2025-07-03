@@ -226,13 +226,11 @@ class SaleOrder(models.Model):
                 
     def create_shopify_order_line(self, shopify_order_id, order, skip_existing_order, shopify_instance_id):
         # Crea líneas de orden de venta en Odoo basadas en las líneas de Shopify
-        # Calcular el porcentaje total de descuento usando total_discounts antes de procesar las líneas
-        total_discount_percentage = 0.0
-        total_discounts = float(order.get('total_discounts', 0.0))
-        if total_discounts > 0:
-            subtotal = sum(float(line.get('price', 0)) * line.get('quantity', 1) for line in order.get('line_items', []))
-            if subtotal > 0:
-                total_discount_percentage = round((total_discounts / subtotal) * 100, 2)
+        # La lógica anterior aplicaba un porcentaje de descuento global calculado
+        # a partir del total de descuentos del pedido. Shopify, sin embargo,
+        # informa el descuento real aplicado a cada línea mediante el nodo
+        # ``discount_allocations``. A partir de estos valores calculamos el
+        # porcentaje de descuento por línea.
 
         # Si hay líneas existentes y no se salta la actualización, eliminarlas
         if shopify_order_id.order_line and not skip_existing_order:
@@ -291,21 +289,30 @@ class SaleOrder(models.Model):
                 product_name = line.get('title')
                 
             if product:
-                # Precio recibido de Shopify (incluye IVA y descuento ya aplicado)
+                # Precio final recibido de Shopify (incluye el descuento ya aplicado)
                 price_incl = float(line.get('price'))
-                # Si los precios no incluyen IVA, no dividir; usar el precio tal cual
+                discount_allocations = line.get('discount_allocations', []) or []
+                discount_amount = sum(float(d.get('amount', 0.0)) for d in discount_allocations)
+
+                # Calcular el porcentaje de descuento sin distinguir impuestos
+                original_price_incl = price_incl + discount_amount
+                discount_percent = 0.0
+                if original_price_incl:
+                    discount_percent = round((discount_amount / original_price_incl) * 100, 2)
+
+                # Convertimos precios a importe sin impuestos cuando corresponda
                 if shopify_instance_id.prices_include_tax:
-                    price_excl = round(price_incl / (1 + tax_rate_total), 2) if tax_rate_total else price_incl
+                    price_unit = round(original_price_incl / (1 + tax_rate_total), 2) if tax_rate_total else original_price_incl
                 else:
-                    price_excl = price_incl
+                    price_unit = original_price_incl
 
                 shopify_order_line_vals = {
                     'order_id': shopify_order_id.id,
                     'product_id': product.id,
                     'name': product_name,
                     'product_uom_qty': line.get('quantity'),
-                    'price_unit': price_excl,
-                    'discount': total_discount_percentage if total_discount_percentage else 0.0
+                    'price_unit': price_unit,
+                    'discount': discount_percent,
                     #'tax_id': [(6, 0, tax_list)]
                 }
                 self.env['sale.order.line'].sudo().create(shopify_order_line_vals)
@@ -515,7 +522,6 @@ class SaleOrder(models.Model):
             response = ""
             for order in order_ids:
                 line_val_list = []
-                discount_val = []
                 if order.order_line:
                     for line in order.order_line:
                         line_vals_dict = {
@@ -532,7 +538,6 @@ class SaleOrder(models.Model):
                             }
                         }
                         line_val_list.append(line_vals_dict)
-                        discount_val.append(line.discount)
                         
                 map_for_instance = order.shopify_order_map_ids.filtered(
                     lambda m: m.shopify_instance_id.id == instance_id.id
