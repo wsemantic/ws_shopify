@@ -449,7 +449,7 @@ class SaleOrder(models.Model):
                 
             # Configurar parámetros para la consulta a Shopify
             params = {
-                "limit": 250,  # Ajusta el tamaño de página según sea necesario
+                "limit": 1,  # Ajusta el tamaño de página según sea necesario
                 "pageInfo": None,
                 "status": "any"
             }
