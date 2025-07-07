@@ -290,12 +290,15 @@ class SaleOrder(models.Model):
                 
             if product:
                 # Precio final recibido de Shopify (incluye el descuento ya aplicado)
-                price_incl = float(line.get('price'))
+                
                 discount_allocations = line.get('discount_allocations', []) or []
                 discount_amount = sum(float(d.get('amount', 0.0)) for d in discount_allocations)
-
-                # Calcular el porcentaje de descuento sin distinguir impuestos
-                original_price_incl = price_incl + discount_amount
+                price_incl = float(line.get('price'))
+                original_price_incl=price_incl
+                
+                if discount_amount:
+                    price_incl=price_incl-discount_amount
+                
                 discount_percent = 0.0
                 if original_price_incl:
                     discount_percent = round((discount_amount / original_price_incl) * 100, 2)
