@@ -290,18 +290,18 @@ class SaleOrder(models.Model):
                 
             if product:
                 # Precio final recibido de Shopify (incluye el descuento ya aplicado)
-                
+                quantity=line.get('quantity')
                 discount_allocations = line.get('discount_allocations', []) or []
                 discount_amount = sum(float(d.get('amount', 0.0)) for d in discount_allocations)
                 price_incl = float(line.get('price'))
                 original_price_incl=price_incl
                 
-                if discount_amount:
+                if discount_amount:#es total para la cantidad total
                     price_incl=price_incl-discount_amount
                 
                 discount_percent = 0.0
                 if original_price_incl:
-                    discount_percent = round((discount_amount / original_price_incl) * 100, 2)
+                    discount_percent = round((discount_amount / (quantity*original_price_incl)) * 100, 2)
 
                 # Convertimos precios a importe sin impuestos cuando corresponda
                 if shopify_instance_id.prices_include_tax:
@@ -313,7 +313,7 @@ class SaleOrder(models.Model):
                     'order_id': shopify_order_id.id,
                     'product_id': product.id,
                     'name': product_name,
-                    'product_uom_qty': line.get('quantity'),
+                    'product_uom_qty': quantity,
                     'price_unit': price_unit,
                     'discount': discount_percent,
                     #'tax_id': [(6, 0, tax_list)]
