@@ -770,9 +770,15 @@ class ProductTemplate(models.Model):
                                             retries += 1
                                             _logger.info(
                                                 f"WSSH Retrying update without variants {missing_ids}")
-                                            continue
+                                        continue
                                     except Exception as parse_e:
                                         _logger.error(f"WSSH Error processing 422 response: {str(parse_e)}")
+
+                                if response.status_code == 404:
+                                    # Shopify product no longer exists
+                                    self._handle_missing_shopify_product(product, instance_id, product_map)
+                                    product_processed = True
+                                    break
 
                                 _logger.error(
                                     f"WSSH Error updating product {product_map.web_product_id}: Status {response.status_code}, Response: {response.text}")
@@ -964,8 +970,49 @@ class ProductTemplate(models.Model):
                     _logger.warning("No shopify.location found for instance %s", instance_id.name)
             else:
                 sku = odoo_variant.default_code or 'N/A'
-                _logger.warning(f"WSSH Update var: No matching Shopify variant found for Odoo variant with SKU %s", sku)   
-                     
+                _logger.warning(f"WSSH Update var: No matching Shopify variant found for Odoo variant with SKU %s", sku)
+
+
+    def _handle_missing_shopify_product(self, product, instance_id, product_map):
+        """Handle a 404 error when trying to update a Shopify product.
+
+        This method logs the incident, unpublishes the product in Odoo,
+        appends the marker ``-ELIMINADO SHOPIFY`` to the description and
+        removes all mapping records related to the product, its variants and
+        stock mappings.
+        """
+
+        _logger.error(
+            "WSSH Shopify product %s not found for instance %s. Marking as deleted.",
+            product_map.web_product_id if product_map else 'N/A',
+            instance_id.name,
+        )
+
+        # Mark product as unpublished and update description
+        description = product.description or ""
+        if "-ELIMINADO SHOPIFY" not in description:
+            description = (description + " -ELIMINADO SHOPIFY").strip()
+        product.sudo().write({
+            "is_published": False,
+            "description": description,
+        })
+
+        # Remove template/product mapping
+        if product_map:
+            product_map.unlink()
+
+        # Remove variant and stock mappings for this instance
+        variant_maps = product.product_variant_ids.mapped("shopify_variant_map_ids").filtered(
+            lambda m: m.shopify_instance_id == instance_id
+        )
+        stock_maps = product.product_variant_ids.mapped("shopify_stock_map_ids").filtered(
+            lambda m: m.shopify_instance_id == instance_id
+        )
+        if variant_maps:
+            variant_maps.unlink()
+        if stock_maps:
+            stock_maps.unlink()
+
                 
     def _prepare_shopify_variant_data(self, variant, instance_id, is_update=False):
         """
