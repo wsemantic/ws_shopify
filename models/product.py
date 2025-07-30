@@ -580,9 +580,10 @@ class ProductTemplate(models.Model):
                 "Content-Type": "application/json"
             }
 
-            
+
             processed_count = 0
             max_processed = 100  # Limitar a 10 productos exportados por ejecución
+            last_request_time = time.time() - 1  # Para permitir la primera llamada inmediata
 
             for product, color_value in self._iter_export_items(products_to_export, instance_id.split_products_by_color):
                 product_processed = False
@@ -729,7 +730,15 @@ class ProductTemplate(models.Model):
                         try:
                             retries = 0
                             while True:
+                                # Respetar el rate limit de Shopify
+                                elapsed = time.time() - last_request_time
+                                if elapsed < 0.5:
+                                    sleep_time = 0.5 - elapsed
+                                    _logger.info(f"WSSH Esperando {sleep_time}s para respetar rate limits")
+                                    time.sleep(sleep_time)
+
                                 response = requests.put(url, headers=headers, data=json.dumps(product_data))
+                                last_request_time = time.time()
                                 _logger.info(f"WSSH PUT request status: {response.status_code}")
 
                                 if response.ok:
@@ -768,11 +777,17 @@ class ProductTemplate(models.Model):
                                             new_variants -= removed_variants
                                             product_data['product']['variants'] = variant_data
                                             retries += 1
-                                            _logger.info(
+                                        _logger.info(
                                                 f"WSSH Retrying update without variants {missing_ids}")
                                         continue
                                     except Exception as parse_e:
                                         _logger.error(f"WSSH Error processing 422 response: {str(parse_e)}")
+
+                                if response.status_code == 429:
+                                    retry_after = int(response.headers.get('Retry-After', 1))
+                                    _logger.warning(f"WSSH Rate limit alcanzado. Esperando {retry_after}s antes de reintentar...")
+                                    time.sleep(retry_after)
+                                    continue
 
                                 if response.status_code == 404:
                                     # Shopify product no longer exists
@@ -809,7 +824,15 @@ class ProductTemplate(models.Model):
                     url = self.get_products_url(instance_id, 'products.json')
 
                     try:
+                        # Respetar el rate limit de Shopify
+                        elapsed = time.time() - last_request_time
+                        if elapsed < 0.5:
+                            sleep_time = 0.5 - elapsed
+                            _logger.info(f"WSSH Esperando {sleep_time}s para respetar rate limits")
+                            time.sleep(sleep_time)
+
                         response = requests.post(url, headers=headers, data=json.dumps(product_data))
+                        last_request_time = time.time()
                         _logger.info(f"WSSH POST request status: {response.status_code}")
 
                         if response.ok:
@@ -833,6 +856,11 @@ class ProductTemplate(models.Model):
                                 _logger.info(f"WSSH Created product map for Shopify product ID: {shopify_product.get('id')}")
                             else:
                                 _logger.warning(f"WSSH No product data in successful response")
+                        elif response.status_code == 429:
+                            retry_after = int(response.headers.get('Retry-After', 1))
+                            _logger.warning(f"WSSH Rate limit alcanzado. Esperando {retry_after}s antes de reintentar...")
+                            time.sleep(retry_after)
+                            continue
                         else:
                             _logger.error(f"WSSH Error creating product: Status {response.status_code}, Response: {response.text}")
                             cname = color_value.name if color_value else 'N/A'
