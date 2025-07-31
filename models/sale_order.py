@@ -283,7 +283,18 @@ class SaleOrder(models.Model):
                         product_name = line.get('title')
                     else:
                         # Si no existe, crear el producto
-                        product = self._create_or_get_product(line.get('title'), sku, 'product')
+                        product_options = {
+                            'option1': line.get('option1'),
+                            'option2': line.get('option2'),
+                        }
+                        product = self._create_or_get_product(
+                            line.get('title'), sku, 'product', options=product_options
+                        )
+                        self.env['shopify.variant.map'].create({
+                            'web_variant_id': line.get('variant_id'),
+                            'odoo_id': product.id,
+                            'shopify_instance_id': shopify_instance_id.id,
+                        })
                         product_name = line.get('title')
             else:
                 product_name = line.get('title')
@@ -346,18 +357,32 @@ class SaleOrder(models.Model):
 
         return True
         
-    def _create_or_get_product(self, name, sku='', product_type='product'):
-        """
-        Centraliza la creación de productos tanto para líneas de pedido como para gastos de envío
-        
+    def _create_or_get_product(self, name, sku='', product_type='product', options=None):
+        """Crear o recuperar un producto estándar o un producto de envío.
+
         Args:
             name: Nombre del producto
             sku: Código SKU (opcional)
             product_type: Tipo de producto ('product' o 'shipping')
-            
+            options: Diccionario con las opciones de variante, usado solo para
+                productos de líneas de pedido.
+
         Returns:
             product.product: El producto creado o encontrado
+
+        Raises:
+            UserError: Si se intenta crear un producto de línea con dos
+                opciones de variante.
         """
+        if product_type == 'product' and options:
+            if options.get('option1') and options.get('option2'):
+                _logger.error(
+                    f"WSSH Variantes con dos opciones no mapeadas para '{name}': {options.get('option1')}, {options.get('option2')}"
+                )
+                raise UserError(
+                    _(f"WSSH Producto con dos opciones no encontrado en Odoo: {name}")
+                )
+
         product_vals = {
             'name': name,
             'detailed_type': 'product',
