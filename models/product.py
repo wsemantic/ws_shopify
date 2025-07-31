@@ -126,8 +126,18 @@ class ProductTemplate(models.Model):
                                                                      shopify_instance_id.shopify_version, endpoint)
         return shop_url
 
-    def import_shopify_products_sub(self, shopify_instance_id, skip_existing_products, from_date, to_date, sort_order="asc"):
-        """Fetch products from a single Shopify instance."""
+    def import_shopify_products_sub(self, shopify_instance_id, skip_existing_products, from_date, to_date, sort_order="asc", stop_on_first_mapped=False):
+        """Fetch products from a single Shopify instance.
+
+        :param shopify_instance_id: Shopify instance record
+        :param skip_existing_products: Whether to skip creation of products that already exist
+        :param from_date: Start date for fetching products
+        :param to_date: End date for fetching products
+        :param sort_order: Order in which products are fetched ('asc' or 'desc')
+        :param stop_on_first_mapped: If ``True`` stop processing when the first
+            product already mapped in Odoo is found. Useful when fetching in
+            descending order to recreate missing mappings.
+        """
         _logger.info("WSSH Starting product import for instance %s", shopify_instance_id.name)
 
         url = self.get_products_url(shopify_instance_id, endpoint='products.json')
@@ -169,13 +179,18 @@ class ProductTemplate(models.Model):
         _logger.info("WSSH Total products fetched from Shopify: %d", len(all_products))
 
         if all_products:
-            products = self._process_imported_products(all_products, shopify_instance_id, skip_existing_products)
+            products = self._process_imported_products(
+                all_products,
+                shopify_instance_id,
+                skip_existing_products,
+                stop_on_first_mapped=stop_on_first_mapped,
+            )
             return products
         else:
             _logger.info("WSSH No products found in Shopify store for instance %s", shopify_instance_id.name)
             return []
 
-    def import_shopify_products(self, shopify_instance_ids, skip_existing_products, from_date, to_date):
+    def import_shopify_products(self, shopify_instance_ids, skip_existing_products, from_date, to_date, stop_on_first_mapped=False):
         if not shopify_instance_ids:
             shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
         for shopify_instance_id in shopify_instance_ids:
@@ -185,9 +200,17 @@ class ProductTemplate(models.Model):
                 from_date,
                 to_date,
                 sort_order="asc",
+                stop_on_first_mapped=stop_on_first_mapped,
             )
 
-    def _process_imported_products(self, shopify_products, shopify_instance_id, skip_existing_products):
+    def _process_imported_products(
+        self,
+        shopify_products,
+        shopify_instance_id,
+        skip_existing_products,
+        stop_on_first_mapped=False,
+    ):
+        """Process the list of Shopify products fetched for import."""
         product_list = []
         for shopify_product in shopify_products:
             _logger.info("WSSH Processing Shopify product ID: %s", shopify_product.get('id'))
@@ -205,8 +228,12 @@ class ProductTemplate(models.Model):
                 
                 if existing_attribute_value:
                     # Si el producto ya existe, no hacer nada
-                    _logger.info(f"WSSH Product with Shopify ID {shopify_product_id} already exists in Odoo for instance {shopify_instance_id.name}.")
+                    _logger.info(
+                        f"WSSH Product with Shopify ID {shopify_product_id} already exists in Odoo for instance {shopify_instance_id.name}."
+                    )
                     product_list.append(existing_attribute_value.product_tmpl_id.id)
+                    if stop_on_first_mapped:
+                        return product_list
                     continue
             else:
                 # Cambio: Buscar en shopify.product.template.map para modo sin split
@@ -215,8 +242,12 @@ class ProductTemplate(models.Model):
                     ('shopify_instance_id', '=', shopify_instance_id.id),
                 ], limit=1)
                 if existing_template_map:
-                    _logger.info(f"WSSH Product with Shopify ID {shopify_product_id} already exists in Odoo for instance {shopify_instance_id.name}.")
+                    _logger.info(
+                        f"WSSH Product with Shopify ID {shopify_product_id} already exists in Odoo for instance {shopify_instance_id.name}."
+                    )
                     product_list.append(existing_template_map.odoo_id.id)
+                    if stop_on_first_mapped:
+                        return product_list
                     continue
             
             # Si no existe, buscar por las variantes (shopify_variant_id o default_code)
@@ -565,6 +596,7 @@ class ProductTemplate(models.Model):
                     from_date=False,
                     to_date=fields.Datetime.now().isoformat(),
                     sort_order="desc",
+                    stop_on_first_mapped=True,
                 )
             
             export_update_time = fields.Datetime.now()                 
