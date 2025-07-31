@@ -547,15 +547,25 @@ class ProductTemplate(models.Model):
             shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
             
         for instance_id in shopify_instance_ids:
-            # Si _check_last_shopify_product_map lanza un UserError, la ejecución se detendrá aquí.
+            # Verificar que el último producto relevante de Shopify esté mapeado
             try:
-                self._check_last_shopify_product_map(instance_id)
+                mapping_ok = self._check_last_shopify_product_map(instance_id)
             except UserError as e:
-                # Si _check_last_shopify_product_map lanza UserError, no continuar con la exportación
-                _logger.error(f"WSSH Exportación de productos abortada para instancia {instance_id.name} debido a fallo en verificación inicial.")
-                                                                                                            
-                            
-                return # Salir del método para esta instancia
+                _logger.error(f"WSSH Exportación de productos abortada para instancia {instance_id.name} debido a error en verificación inicial: {e}")
+                return
+
+            if not mapping_ok:
+                _logger.warning(
+                    "WSSH No se encontró mapeo para el último producto relevante. "
+                    "Importando productos recientes para recrearlo..."
+                )
+                self.import_shopify_products_sub(
+                    instance_id,
+                    skip_existing_products=True,
+                    from_date=False,
+                    to_date=fields.Datetime.now().isoformat(),
+                    sort_order="desc",
+                )
             
             export_update_time = fields.Datetime.now()                 
             
@@ -1252,10 +1262,11 @@ class ProductTemplate(models.Model):
 
     def _check_last_shopify_product_map(self, shopify_instance):
         """
-        Verifica si el último producto *relevante* (con variantes y barcode)
-        creado en Shopify por el conector tiene un mapeo correspondiente en Odoo.
-        Se considera relevante si tiene variantes y al menos una con código de barras.
-        Utiliza la librería requests como en otros métodos.
+        Comprueba si el producto más reciente de Shopify con variantes y código
+        de barras tiene un mapeo en Odoo.
+
+        Devuelve ``True`` si existe el mapeo y ``False`` en caso contrario.
+        Cualquier error de conexión genera una :class:`UserError`.
         """
         _logger.info("WSSH Verificando mapeo del último producto *relevante* (con barcode) creado en Shopify para instancia %s",
                      shopify_instance.name)
@@ -1349,17 +1360,11 @@ class ProductTemplate(models.Model):
 
             # 6. Verificar si se encontró el mapeo del producto relevante
             if not template_map and not product_map:
-                # ¡Problema detectado! El último producto *relevante* (con barcode) en Shopify no está mapeado en Odoo
-                error_msg = (
-                    f"WSSH ¡ALERTA CRÍTICA! Se encontró el último producto *relevante* (con barcode) creado en Shopify "
-                    f"(ID: {relevant_shopify_product_id}, Instancia: {shopify_instance.name}) PERO NO TIENE "
-                    f"UN REGISTRO DE MAPEO CORRESPONDIENTE EN ODOO ('shopify.product.template.map' ni 'shopify.product.map'). "
-                    "Esto indica una inconsistencia previa que podría llevar a duplicados de productos *con barcode*. "
-                    "Se aborta la exportación de productos para esta instancia hasta corregir el mapeo."
+                _logger.warning(
+                    "WSSH El último producto relevante creado en Shopify (ID %s) no tiene mapeo en Odoo",
+                    relevant_shopify_product_id,
                 )
-                _logger.error(error_msg)
-                # Abortar la ejecución
-                raise UserError(_(error_msg))
+                return False
 
             _logger.info("WSSH Mapeo encontrado para el último producto *relevante* (con barcode) de Shopify (ID %s). Procediendo con la exportación...",
                          relevant_shopify_product_id)
