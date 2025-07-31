@@ -126,58 +126,66 @@ class ProductTemplate(models.Model):
                                                                      shopify_instance_id.shopify_version, endpoint)
         return shop_url
 
+    def import_shopify_products_sub(self, shopify_instance_id, skip_existing_products, from_date, to_date, sort_order="asc"):
+        """Fetch products from a single Shopify instance."""
+        _logger.info("WSSH Starting product import for instance %s", shopify_instance_id.name)
+
+        url = self.get_products_url(shopify_instance_id, endpoint='products.json')
+        access_token = shopify_instance_id.shopify_shared_secret
+        headers = {
+            "X-Shopify-Access-Token": access_token,
+        }
+
+        params = {
+            "limit": 250,
+            "order": f"id {sort_order}",
+            "pageInfo": None,
+        }
+
+        if from_date and to_date:
+            params.update({
+                "created_at_min": from_date,
+                "created_at_max": to_date,
+            })
+
+        all_products = []
+        while True:
+            response = requests.get(url, headers=headers, params=params)
+
+            if response.status_code == 200 and response.content:
+                shopify_products = response.json()
+                products = shopify_products.get('products', [])
+                all_products.extend(products)
+                _logger.info("WSSH All products fetched : %d", len(all_products))
+                link_header = response.headers.get('Link')
+                if link_header:
+                    links = shopify_instance_id._parse_link_header(link_header)
+                    if 'next' in links:
+                        url = links['next']
+                        params = None
+                        continue
+            break
+
+        _logger.info("WSSH Total products fetched from Shopify: %d", len(all_products))
+
+        if all_products:
+            products = self._process_imported_products(all_products, shopify_instance_id, skip_existing_products)
+            return products
+        else:
+            _logger.info("WSSH No products found in Shopify store for instance %s", shopify_instance_id.name)
+            return []
+
     def import_shopify_products(self, shopify_instance_ids, skip_existing_products, from_date, to_date):
         if not shopify_instance_ids:
             shopify_instance_ids = self.env['shopify.web'].sudo().search([('shopify_active', '=', True)])
-        
         for shopify_instance_id in shopify_instance_ids:
-            _logger.info("WSSH Starting product import for instance %s", shopify_instance_id.name)                                                                                                  
-            url = self.get_products_url(shopify_instance_id, endpoint='products.json')
-            access_token = shopify_instance_id.shopify_shared_secret
-            headers = {
-                "X-Shopify-Access-Token": access_token,
-            }
-            
-            # Parámetros para la solicitud
-            params = {
-                "limit": 250,  # Ajustar el tamaño de la página según sea necesario
-                "order": "id asc",
-                "pageInfo": None,  
-            }
-            
-            if from_date and to_date:
-                params.update({
-                    "created_at_min": from_date,
-                    "created_at_max": to_date,
-                })
-            
-            all_products = []
-            while True:
-                #_logger.info("WSSH Shopify POST response JSON: %s", json.dumps(response.json(), indent=4))
-                response = requests.get(url, headers=headers, params=params)                
-                if response.status_code == 200 and response.content:
-                    shopify_products = response.json()
-                    products = shopify_products.get('products', [])
-                    all_products.extend(products)
-                    _logger.info("WSSH All products fetched : %d", len(all_products))
-                    # Verificar si hay más páginas                        
-                    link_header = response.headers.get('Link')
-                    if link_header:
-                        links = shopify_instance_id._parse_link_header(link_header)
-                        if 'next' in links:
-                            url = links['next']
-                            params = None                            
-                            continue
-                break              
-            _logger.info("WSSH Total products fetched from Shopify: %d", len(all_products))
-             
-            if all_products:
-                # Procesar los productos importados
-                products = self._process_imported_products(all_products, shopify_instance_id, skip_existing_products)
-                return products
-            else:
-                _logger.info("WSSH No products found in Shopify store for instance %s", shopify_instance_id.name)
-                return []
+            return self.import_shopify_products_sub(
+                shopify_instance_id,
+                skip_existing_products,
+                from_date,
+                to_date,
+                sort_order="asc",
+            )
 
     def _process_imported_products(self, shopify_products, shopify_instance_id, skip_existing_products):
         product_list = []
