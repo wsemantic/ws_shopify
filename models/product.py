@@ -797,7 +797,8 @@ class ProductTemplate(models.Model):
                         
                         try:
                             retries = 0
-                            while True:
+                            max_retries = 3
+                            while retries < max_retries:
                                 # Respetar el rate limit de Shopify
                                 elapsed = time.time() - last_request_time
                                 if elapsed < 0.5:
@@ -814,9 +815,10 @@ class ProductTemplate(models.Model):
                                     product_processed = True
                                     break
 
-                                if response.status_code == 422 and retries == 0:
+                                if response.status_code == 422:
                                     try:
                                         err_data = response.json()
+                                        _logger.error(f"WSSH 422 response body: {err_data}")
                                         variant_errors = err_data.get('errors', {}).get('variants', [])
                                         missing_ids = []
                                         removed_variants = self.env['product.product']
@@ -845,9 +847,13 @@ class ProductTemplate(models.Model):
                                             new_variants -= removed_variants
                                             product_data['product']['variants'] = variant_data
                                             retries += 1
-                                        _logger.info(
-                                                f"WSSH Retrying update without variants {missing_ids}")
-                                        continue
+                                            _logger.info(
+                                                f"WSSH Retrying update without variants {missing_ids} ({retries}/{max_retries})")
+                                            continue
+                                        _logger.error("WSSH 422 error without missing variant ids; aborting")
+                                        cname = color_value.name if color_value else 'N/A'
+                                        raise UserError(
+                                            f"WSSH Error updating product {product.name} - {cname}: {response.text}")
                                     except Exception as parse_e:
                                         _logger.error(f"WSSH Error processing 422 response: {str(parse_e)}")
 
@@ -869,6 +875,12 @@ class ProductTemplate(models.Model):
                                 cname = color_value.name if color_value else 'N/A'
                                 raise UserError(
                                     f"WSSH Error updating product {product.name} - {cname}: {response.text}")
+                            else:
+                                _logger.error(
+                                    f"WSSH Failed to update product {product_map.web_product_id} after {max_retries} attempts")
+                                cname = color_value.name if color_value else 'N/A'
+                                raise UserError(
+                                    f"WSSH Error updating product {product.name} - {cname}: agotados {max_retries} reintentos")
                             # end while
 
                         except requests.exceptions.RequestException as e:
