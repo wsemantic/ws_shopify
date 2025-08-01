@@ -824,9 +824,12 @@ class ProductTemplate(models.Model):
                                         removed_variants = self.env['product.product']
 
                                         for msg in variant_errors:
-                                            m = re.search(r"\[([0-9 ,]+)\]", msg)
-                                            if m:
-                                                ids = [v.strip() for v in m.group(1).split(',') if v.strip()]
+                                            # Some Shopify messages include IDs
+                                            # inside brackets, others just list
+                                            # them directly. Extract all digit
+                                            # sequences to cover both cases.
+                                            ids = re.findall(r"\d+", msg)
+                                            if ids:
                                                 missing_ids.extend(ids)
                                                 for vid in ids:
                                                     maps = self.env['shopify.variant.map'].sudo().search([
