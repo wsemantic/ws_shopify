@@ -34,6 +34,12 @@ class ShopifyInstance(models.Model):
     split_products_by_color = fields.Boolean(string="Split Products by Color", default=False)
     color_option_position = fields.Integer(string="Color Option Position", default=1, help="Define en qué opción de Shopify se mapeará el color (por defecto, en la opción 1).")
     size_option_position = fields.Integer(string="Size Option Position", default=2, help="Define en qué opción de Shopify se mapeará la talla (por defecto, en la opción 2).")
+
+    product_export_timeout = fields.Integer(
+        string="Product Export Timeout (s)",
+        default=300,
+        help="Tiempo máximo, en segundos, que se empleará en la exportación de productos antes de detener el proceso.",
+    )
     
     last_export_stock_id = fields.Integer(string="Último ID Stock exportado", default=0, help="ID del último stock exportado")
     last_export_product_id = fields.Integer(string="Último ID Producto exportado", default=0, help="ID del último producto exportado")

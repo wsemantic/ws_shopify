@@ -631,7 +631,9 @@ class ProductTemplate(models.Model):
             }
 
             # Control de tiempo máximo para la exportación
-            time_limit = config.get('product_export_timeout', 300)
+
+            time_limit = getattr(instance_id, 'product_export_timeout', 300) or 300
+
             start_time = time.time()
 
             processed_count = 0
