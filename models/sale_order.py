@@ -238,7 +238,7 @@ class SaleOrder(models.Model):
 
         for line in order.get('line_items'):
             product_name = line.get('title', '')
-            if re.search(r'recargo.*equivalencia', product_name, re.IGNORECASE):
+            if re.search(r'recargo', product_name, re.IGNORECASE):
                 continue
             tax_list, tax_rate_total = self._process_tax_lines(line.get('tax_lines'), service=False)
             product = self.env['product.product'].sudo().search([
