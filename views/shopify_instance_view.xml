@@ -52,9 +52,10 @@
 									<field name="last_export_stock_id"/>
 									<field name="split_products_by_color"/>
 									<field name="size_option_position"/>
-									<field name="color_option_position"/>
-								</group>
-							</page>							
+                                                                    <field name="color_option_position"/>
+                                                                    <field name="product_export_timeout"/>
+                                                                </group>
+                                                        </page>
                         </notebook>
                     </sheet>
                 </form>
