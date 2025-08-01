@@ -848,6 +848,15 @@ class ProductTemplate(models.Model):
                                             ]
                                             variants -= removed_variants
                                             new_variants -= removed_variants
+
+                                            # Si no quedan variantes a actualizar o crear,
+                                            # no tiene sentido enviar un payload vacío
+                                            if not variant_data:
+                                                _logger.warning(
+                                                    f"WSSH All variants removed for product {product_map.web_product_id}; skipping update")
+                                                product_processed = True
+                                                break
+
                                             product_data['product']['variants'] = variant_data
                                             retries += 1
                                             _logger.info(
