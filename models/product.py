@@ -630,12 +630,28 @@ class ProductTemplate(models.Model):
                 "Content-Type": "application/json"
             }
 
+            # Control de tiempo máximo para la exportación
+            time_limit = config.get('product_export_timeout', 300)
+            start_time = time.time()
 
             processed_count = 0
-            max_processed = 100  # Limitar a 10 productos exportados por ejecución
+            max_processed = 100  # Limitar a 100 productos exportados por ejecución
             last_request_time = time.time() - 1  # Para permitir la primera llamada inmediata
+            timeout_reached = False
 
             for product, color_value in self._iter_export_items(products_to_export, instance_id.split_products_by_color):
+                # Verificar timeout global de exportación
+                elapsed_global = time.time() - start_time
+                if elapsed_global > time_limit:
+                    _logger.info(
+                        "WSSH Tiempo límite alcanzado (%.1fs de %ss) para instancia %s",
+                        elapsed_global,
+                        time_limit,
+                        instance_id.name,
+                    )
+                    timeout_reached = True
+                    break
+
                 product_processed = False
 
                 if color_value:
@@ -835,7 +851,8 @@ class ProductTemplate(models.Model):
 
                                 if response.status_code == 429:
                                     retry_after = int(response.headers.get('Retry-After', 1))
-                                    _logger.warning(f"WSSH Rate limit alcanzado. Esperando {retry_after}s antes de reintentar...")
+                                    _logger.warning(
+                                        f"WSSH Rate limit alcanzado. Esperando {retry_after}s antes de reintentar...")
                                     time.sleep(retry_after)
                                     continue
 
@@ -908,7 +925,8 @@ class ProductTemplate(models.Model):
                                 _logger.warning(f"WSSH No product data in successful response")
                         elif response.status_code == 429:
                             retry_after = int(response.headers.get('Retry-After', 1))
-                            _logger.warning(f"WSSH Rate limit alcanzado. Esperando {retry_after}s antes de reintentar...")
+                            _logger.warning(
+                                f"WSSH Rate limit alcanzado. Esperando {retry_after}s antes de reintentar...")
                             time.sleep(retry_after)
                             continue
                         else:
@@ -928,7 +946,6 @@ class ProductTemplate(models.Model):
                         _logger.error(f"WSSH Unexpected error creating product: {str(e)}")
                         cname = color_value.name if color_value else 'N/A'
                         raise UserError(f"WSSH Unexpected error creating product {product.name} - {cname}: {str(e)}")
-
                 # Procesar respuesta y actualizar variant IDs si todo fue exitoso
                 if response and response.ok:
                     try:
@@ -969,15 +986,19 @@ class ProductTemplate(models.Model):
 
                     export_update_time = product.write_date - datetime.timedelta(seconds=1)
                     break
-            # Corregir lógica de actualización de last_export_product                                          
+            # Corregir lógica de actualización de last_export_product
             if processed_count > 0:
-                if processed_count < max_processed:
+                if processed_count < max_processed and not timeout_reached:
                     # Si se procesaron todos los productos pendientes, actualizar fecha y resetear ID
                     self.write_with_retry(instance_id, 'last_export_product', export_update_time)
                     self.write_with_retry(instance_id, 'last_export_product_id', 0)
                 else:
-                    # Si se alcanzó el límite, actualizar fecha hasta el último producto procesado
+                    # Si se alcanzó el límite o el timeout, actualizar fecha hasta el último producto procesado
                     self.write_with_retry(instance_id, 'last_export_product', export_update_time)
+
+            if timeout_reached:
+                _logger.info("WSSH Exportación detenida por tiempo límite en instancia %s", instance_id.name)
+                break
                                
             
     def _update_variant_ids(self, odoo_variants, shopify_variants, instance_id):
