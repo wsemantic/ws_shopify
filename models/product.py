@@ -777,7 +777,7 @@ class ProductTemplate(models.Model):
                 product_data = {
                     "product": {
                         "options": options_data,
-                        "tags": ','.join(tag.name for tag in product.product_tag_ids),
+                        #"tags": ','.join(tag.name for tag in product.product_tag_ids),
                         "variants": variant_data
                     }
                 }
