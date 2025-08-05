@@ -238,11 +238,12 @@ class SaleOrder(models.Model):
 
         for line in order.get('line_items'):
             product_name = line.get('title', '')
+            variant_id = line.get('variant_id')
             if re.search(r'recargo', product_name, re.IGNORECASE):
                 continue
             tax_list, tax_rate_total = self._process_tax_lines(line.get('tax_lines'), service=False)
             product = self.env['product.product'].sudo().search([
-                ('shopify_variant_map_ids.web_variant_id', '=', line.get('variant_id')),
+                ('shopify_variant_map_ids.web_variant_id', '=', variant_id),
                 ('shopify_variant_map_ids.shopify_instance_id', '=', shopify_instance_id.id)
             ], limit=1)
             if not product:
@@ -261,28 +262,36 @@ class SaleOrder(models.Model):
                         )
                         if product_map:
                             # Si el mapeo existe pero el variant_id ha cambiado, actualizarlo
-                            if product_map.web_variant_id != str(line.get('variant_id')):
-                                product_map.write({'web_variant_id': line.get('variant_id')})
+                            if variant_id and product_map.web_variant_id != str(variant_id):
+                                product_map.write({'web_variant_id': variant_id})
                             product = product_by_sku
                             product_name = line.get('title')+' '+sku
                         else:
-                            self.env['shopify.variant.map'].create({
-                                'web_variant_id': line.get('variant_id'),
-                                'odoo_id': product_by_sku.id,
-                                'shopify_instance_id': shopify_instance_id.id,
-                            })
-    
+                            if variant_id:
+                                self.env['shopify.variant.map'].create({
+                                    'web_variant_id': variant_id,
+                                    'odoo_id': product_by_sku.id,
+                                    'shopify_instance_id': shopify_instance_id.id,
+                                })
+
                 if not product:
                     # Buscar/crear por nombre si no se encontró por SKU
                     product_by_name = self.env['product.product'].sudo().search([
                         ('name', '=', line.get('title'))
                     ], limit=1)
-                    
+
                     if product_by_name:
                         product = product_by_name
                         product_name = line.get('title')
                     else:
                         # Si no existe, crear el producto
+                        if variant_id:
+                            _logger.error(
+                                f"WSSH Producto con variante no encontrado en Odoo: {line.get('title')} ({variant_id})"
+                            )
+                            raise UserError(
+                                _(f"WSSH Variante no encontrada en Odoo: {line.get('title')}")
+                            )
                         product_options = {
                             'option1': line.get('option1'),
                             'option2': line.get('option2'),
@@ -290,11 +299,6 @@ class SaleOrder(models.Model):
                         product = self._create_or_get_product(
                             line.get('title'), sku, 'product', options=product_options
                         )
-                        self.env['shopify.variant.map'].create({
-                            'web_variant_id': line.get('variant_id'),
-                            'odoo_id': product.id,
-                            'shopify_instance_id': shopify_instance_id.id,
-                        })
                         product_name = line.get('title')
             else:
                 product_name = line.get('title')
@@ -369,19 +373,7 @@ class SaleOrder(models.Model):
 
         Returns:
             product.product: El producto creado o encontrado
-
-        Raises:
-            UserError: Si se intenta crear un producto de línea con dos
-                opciones de variante.
         """
-        if product_type == 'product' and options:
-            if options.get('option1') and options.get('option2'):
-                _logger.error(
-                    f"WSSH Variantes con dos opciones no mapeadas para '{name}': {options.get('option1')}, {options.get('option2')}"
-                )
-                raise UserError(
-                    _(f"WSSH Producto con dos opciones no encontrado en Odoo: {name}")
-                )
 
         product_vals = {
             'name': name,
