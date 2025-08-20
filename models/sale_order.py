@@ -276,6 +276,8 @@ class SaleOrder(models.Model):
                                     'odoo_id': product_by_sku.id,
                                     'shopify_instance_id': shopify_instance_id.id,
                                 })
+                            product = product_by_sku
+                            product_name = line.get('title') + ' ' + sku
 
                 if not product:
                     # Buscar/crear por nombre si no se encontró por SKU
