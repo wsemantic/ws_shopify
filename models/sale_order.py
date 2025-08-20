@@ -248,7 +248,7 @@ class SaleOrder(models.Model):
             ], limit=1)
             if not product:
                 sku = line.get('sku') or ''
-                _logger.info(f"WSSH Importanto orden variante sin mapeo sku: {sku} var_id:(variant_id)")
+                _logger.info(f"WSSH Importanto orden variante sin mapeo sku: {sku} var_id:{variant_id}")
                 # Intentar buscar por SKU (default_code) antes de usar el genérico
                 if sku:
                     product_by_sku = self.env['product.product'].sudo().search([
