@@ -248,6 +248,7 @@ class SaleOrder(models.Model):
             ], limit=1)
             if not product:
                 sku = line.get('sku') or ''
+                _logger.info(f"WSSH Importanto orden variante sin mapeo sku: {sku} var_id:(variant_id)")
                 # Intentar buscar por SKU (default_code) antes de usar el genérico
                 if sku:
                     product_by_sku = self.env['product.product'].sudo().search([
@@ -261,6 +262,7 @@ class SaleOrder(models.Model):
                             lambda m: m.shopify_instance_id == shopify_instance_id
                         )
                         if product_map:
+                            _logger.info(f"WSSH actualiznado mapeo obsoleto")
                             # Si el mapeo existe pero el variant_id ha cambiado, actualizarlo
                             if variant_id and product_map.web_variant_id != str(variant_id):
                                 product_map.write({'web_variant_id': variant_id})
@@ -268,6 +270,7 @@ class SaleOrder(models.Model):
                             product_name = line.get('title')+' '+sku
                         else:
                             if variant_id:
+                                _logger.info(f"WSSH creando mapeo variante")
                                 self.env['shopify.variant.map'].create({
                                     'web_variant_id': variant_id,
                                     'odoo_id': product_by_sku.id,
