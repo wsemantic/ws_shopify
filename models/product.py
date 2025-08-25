@@ -700,7 +700,8 @@ class ProductTemplate(models.Model):
                         variant_result = self._prepare_shopify_variant_data(
                             variant, instance_id, is_update=variant_exists_in_shopify
                         )
-                        variant_data.append(variant_result)
+                        if variant_result:
+                            variant_data.append(variant_result)
 
                 # Ordenar variantes por talla si existe línea de talla
                 size_pos = instance_id.size_option_position
@@ -1166,12 +1167,22 @@ class ProductTemplate(models.Model):
             raise UserError(f"Error: Variante SKU {variant.default_code} no tiene talla asignada.")
 
         # Construir el diccionario resultado para Shopify
+        price = (
+            variant.product_tmpl_id.wholesale_price
+            if not instance_id.prices_include_tax
+            else variant.list_price
+        )
+
         result = {
-            "price": variant.product_tmpl_id.wholesale_price if not instance_id.prices_include_tax else variant.list_price,
-            'sku': variant.default_code,
-            'barcode': variant.barcode,
             'inventory_management': 'shopify',
         }
+
+        if variant.default_code:
+            result['sku'] = variant.default_code
+        if variant.barcode:
+            result['barcode'] = variant.barcode
+        if price and price != 0:
+            result['price'] = price
 
         result[f'option{color_pos}'] = color_val
         result[f'option{size_pos}'] = size_val
@@ -1183,6 +1194,11 @@ class ProductTemplate(models.Model):
             )
             if variant_map and variant_map.web_variant_id:
                 result['id'] = str(variant_map.web_variant_id)
+
+        # Si después de limpiar el precio no hay otros datos útiles, omitir
+        useful_keys = set(result.keys()) - {'id', 'inventory_management'}
+        if not useful_keys:
+            return None
 
         return result
 
