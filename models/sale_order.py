@@ -290,10 +290,10 @@ class SaleOrder(models.Model):
                         # Si no existe, crear el producto
                         if variant_id:
                             _logger.error(
-                                f"WSSH Producto con variante no encontrado en Odoo: {line.get('title')} ({variant_id})"
+                                f"WSSH Producto con variante no encontrado en Odoo: {line.get('title')} {sku} ({variant_id})"
                             )
                             raise UserError(
-                                _(f"WSSH Variante no encontrada en Odoo: {line.get('title')}")
+                                _(f"WSSH Variante no encontrada en Odoo: {line.get('title')}  {sku} ")
                             )
                         product_options = {
                             'option1': line.get('option1'),
